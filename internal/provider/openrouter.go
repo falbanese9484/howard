@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,28 +26,57 @@ type OpenRouter struct {
 	url        string
 	apiKey     string
 	model      string
-	context    []openRouterMessage
+	messages   []openRouterMessage
+	tools      []types.Tool
 	modelCache *types.ModelCache
 	logger     *logger.Logger
 }
 
 type openRouterMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string               `json:"role"`
+	Content    string               `json:"content,omitempty"`
+	ToolCalls  []openRouterToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string               `json:"tool_call_id,omitempty"`
+	Name       string               `json:"name,omitempty"`
+}
+
+type openRouterToolCall struct {
+	ID       string                 `json:"id,omitempty"`
+	Type     string                 `json:"type,omitempty"`
+	Function openRouterToolFunction `json:"function"`
+}
+
+type openRouterToolFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 type openRouterRequest struct {
 	Model    string              `json:"model"`
 	Messages []openRouterMessage `json:"messages"`
+	Tools    []ollamaTool        `json:"tools,omitempty"`
 	Stream   bool                `json:"stream"`
 }
 
 type openRouterStreamResponse struct {
 	Choices []struct {
 		Delta struct {
-			Content string `json:"content"`
+			Content   string                    `json:"content"`
+			Reasoning string                    `json:"reasoning"`
+			Thinking  string                    `json:"thinking"`
+			ToolCalls []openRouterToolCallDelta `json:"tool_calls"`
 		} `json:"delta"`
 	} `json:"choices"`
+}
+
+type openRouterToolCallDelta struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Function struct {
+		Name      string `json:"name,omitempty"`
+		Arguments string `json:"arguments,omitempty"`
+	} `json:"function"`
 }
 
 type openRouterModelsResponse struct {
@@ -58,11 +89,30 @@ func NewOpenRouter(log *logger.Logger, apiKey, model string, cache *types.ModelC
 	if apiKey == "" {
 		return nil, errors.New("OpenRouter API key required")
 	}
+
+	tools, err := loadToolsConfig()
+	if err != nil && log != nil {
+		log.Warn("failed to load tools config", "error", err)
+	}
+	if len(tools) > 0 && log != nil {
+		log.Info("loaded tools config", "tools", len(tools))
+	}
+
+	messages := []openRouterMessage{}
+	systemPrompt, err := loadSystemPrompt()
+	if err != nil && log != nil {
+		log.Warn("failed to load system prompt", "error", err)
+	}
+	if systemPrompt != "" {
+		messages = append(messages, openRouterMessage{Role: "system", Content: systemPrompt})
+	}
+
 	return &OpenRouter{
 		url:        openRouterChatURL,
 		apiKey:     apiKey,
 		model:      model,
-		context:    []openRouterMessage{},
+		messages:   messages,
+		tools:      tools,
 		modelCache: cache,
 		logger:     log,
 	}, nil
@@ -70,31 +120,76 @@ func NewOpenRouter(log *logger.Logger, apiKey, model string, cache *types.ModelC
 
 func (o *OpenRouter) GenerateRequest(prompt string) *types.ChatRequest {
 	return &types.ChatRequest{
-		Model:  o.model,
-		Prompt: prompt,
-		Stream: true,
+		Model:    o.model,
+		Messages: []types.Message{{Role: "user", Content: prompt}},
+		Tools:    o.tools,
+		Stream:   true,
 	}
 }
 
 func (o *OpenRouter) Chat(conn *types.BusConnector) {
-	messages := append(o.context, openRouterMessage{Role: "user", Content: conn.Request.Prompt})
+	newMessages := openRouterMessages(conn.Request.Messages)
+	if len(newMessages) == 0 && conn.Request.Prompt != "" {
+		newMessages = []openRouterMessage{{Role: "user", Content: conn.Request.Prompt}}
+	}
 
+	messages := append([]openRouterMessage{}, o.messages...)
+	messages = append(messages, newMessages...)
+
+	tools := conn.Request.Tools
+	if len(tools) == 0 {
+		tools = o.tools
+	}
+
+	const maxToolRounds = 5
+	for round := 0; round < maxToolRounds; round++ {
+		assistantMsg, calls, err := o.sendChat(conn, messages, tools)
+		if err != nil {
+			conn.ErrorChan <- err
+			return
+		}
+
+		messages = append(messages, assistantMsg)
+		if len(calls) == 0 {
+			o.messages = messages
+			conn.DoneChannel <- true
+			return
+		}
+
+		for _, call := range calls {
+			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s]\n", call.Function.Name)}
+			result, err := executeToolCall(call)
+			if err != nil {
+				result = "tool error: " + err.Error()
+			}
+			messages = append(messages, openRouterMessage{
+				Role:       "tool",
+				Content:    result,
+				ToolCallID: call.ID,
+				Name:       call.Function.Name,
+			})
+		}
+	}
+
+	conn.ErrorChan <- fmt.Errorf("maximum tool call rounds exceeded")
+}
+
+func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMessage, tools []types.Tool) (openRouterMessage, []types.ToolCall, error) {
 	reqBody := openRouterRequest{
 		Model:    o.model,
 		Messages: messages,
+		Tools:    ollamaTools(tools),
 		Stream:   true,
 	}
 
 	data, err := json.Marshal(&reqBody)
 	if err != nil {
-		conn.ErrorChan <- err
-		return
+		return openRouterMessage{}, nil, err
 	}
 
 	req, err := http.NewRequestWithContext(conn.Ctx, "POST", o.url, bytes.NewReader(data))
 	if err != nil {
-		conn.ErrorChan <- err
-		return
+		return openRouterMessage{}, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+o.apiKey)
@@ -102,18 +197,20 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		conn.ErrorChan <- err
-		return
+		return openRouterMessage{}, nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		conn.ErrorChan <- fmt.Errorf("OpenRouter returned status %d", resp.StatusCode)
-		return
+		body, _ := io.ReadAll(resp.Body)
+		return openRouterMessage{}, nil, fmt.Errorf("OpenRouter returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var assistant strings.Builder
+	var thinking strings.Builder
+	builders := map[int]*openRouterToolCallBuilder{}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -122,30 +219,156 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 		}
 		data := line[6:]
 		if data == "[DONE]" {
-			o.context = append(o.context, messages...)
-			o.context = append(o.context, openRouterMessage{Role: "assistant", Content: assistant.String()})
-			conn.DoneChannel <- true
-			return
+			toolCalls, calls, err := buildOpenRouterToolCalls(builders)
+			if err != nil {
+				return openRouterMessage{}, nil, err
+			}
+			return openRouterMessage{Role: "assistant", Content: assistant.String(), ToolCalls: toolCalls}, calls, nil
 		}
 
 		var chunk openRouterStreamResponse
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			conn.ErrorChan <- err
-			return
+			return openRouterMessage{}, nil, err
 		}
 		if len(chunk.Choices) == 0 {
-			conn.DoneChannel <- true
-			return
+			continue
 		}
 
-		text := chunk.Choices[0].Delta.Content
-		assistant.WriteString(text)
-		conn.ResponseChan <- &types.ChatResponse{Response: text}
+		delta := chunk.Choices[0].Delta
+		assistant.WriteString(delta.Content)
+		thinkingText := delta.Thinking
+		if thinkingText == "" {
+			thinkingText = delta.Reasoning
+		}
+		thinking.WriteString(thinkingText)
+
+		for _, tc := range delta.ToolCalls {
+			b := builders[tc.Index]
+			if b == nil {
+				b = &openRouterToolCallBuilder{}
+				builders[tc.Index] = b
+			}
+			if tc.ID != "" {
+				b.id = tc.ID
+			}
+			if tc.Type != "" {
+				b.callType = tc.Type
+			}
+			if tc.Function.Name != "" {
+				b.name = tc.Function.Name
+			}
+			b.arguments.WriteString(tc.Function.Arguments)
+		}
+
+		if delta.Content != "" || thinkingText != "" {
+			conn.ResponseChan <- &types.ChatResponse{Response: delta.Content, Thinking: thinkingText}
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		conn.ErrorChan <- err
+		return openRouterMessage{}, nil, err
 	}
+
+	toolCalls, calls, err := buildOpenRouterToolCalls(builders)
+	if err != nil {
+		return openRouterMessage{}, nil, err
+	}
+	return openRouterMessage{Role: "assistant", Content: assistant.String(), ToolCalls: toolCalls}, calls, nil
+}
+
+type openRouterToolCallBuilder struct {
+	id        string
+	callType  string
+	name      string
+	arguments strings.Builder
+}
+
+func buildOpenRouterToolCalls(builders map[int]*openRouterToolCallBuilder) ([]openRouterToolCall, []types.ToolCall, error) {
+	if len(builders) == 0 {
+		return nil, nil, nil
+	}
+
+	indexes := make([]int, 0, len(builders))
+	for index := range builders {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+
+	openRouterCalls := make([]openRouterToolCall, 0, len(indexes))
+	calls := make([]types.ToolCall, 0, len(indexes))
+	for _, index := range indexes {
+		b := builders[index]
+		callType := b.callType
+		if callType == "" {
+			callType = "function"
+		}
+		id := b.id
+		if id == "" {
+			id = "call_" + strconv.Itoa(index)
+		}
+		argsJSON := b.arguments.String()
+		var args map[string]any
+		if strings.TrimSpace(argsJSON) == "" {
+			args = map[string]any{}
+		} else if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+			return nil, nil, fmt.Errorf("decode tool arguments for %s: %w", b.name, err)
+		}
+
+		openRouterCalls = append(openRouterCalls, openRouterToolCall{
+			ID:   id,
+			Type: callType,
+			Function: openRouterToolFunction{
+				Name:      b.name,
+				Arguments: argsJSON,
+			},
+		})
+		calls = append(calls, types.ToolCall{
+			ID:   id,
+			Type: callType,
+			Function: types.ToolCallFunction{
+				Name:      b.name,
+				Arguments: args,
+			},
+		})
+	}
+	return openRouterCalls, calls, nil
+}
+
+func openRouterMessages(messages []types.Message) []openRouterMessage {
+	converted := make([]openRouterMessage, 0, len(messages))
+	for _, msg := range messages {
+		converted = append(converted, openRouterMessage{
+			Role:       msg.Role,
+			Content:    msg.Content,
+			ToolCalls:  openRouterToolCalls(msg.ToolCalls),
+			ToolCallID: msg.ToolCallID,
+			Name:       msg.ToolName,
+		})
+	}
+	return converted
+}
+
+func openRouterToolCalls(calls []types.ToolCall) []openRouterToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	converted := make([]openRouterToolCall, 0, len(calls))
+	for _, call := range calls {
+		callType := call.Type
+		if callType == "" {
+			callType = "function"
+		}
+		args, _ := json.Marshal(call.Function.Arguments)
+		converted = append(converted, openRouterToolCall{
+			ID:   call.ID,
+			Type: callType,
+			Function: openRouterToolFunction{
+				Name:      call.Function.Name,
+				Arguments: string(args),
+			},
+		})
+	}
+	return converted
 }
 
 func (o *OpenRouter) RetrieveModels() ([]types.Model, error) {

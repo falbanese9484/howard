@@ -22,6 +22,8 @@ type mode int
 const (
 	modeChat mode = iota
 	modeModelSelect
+
+	thinkingContentHeight = 5
 )
 
 type (
@@ -30,18 +32,21 @@ type (
 )
 
 type Model struct {
-	input       *components.InputArea
-	chatView    *components.ChatView
-	selector    *components.ModelSelector
-	bus         *chat.Bus
-	provider    types.Provider
-	responses   chan *types.ChatResponse
-	renderer    *glamour.TermRenderer
-	logger      *logger.Logger
-	modelName   string
-	currentResp string
-	mode        mode
-	err         error
+	input           *components.InputArea
+	chatView        *components.ChatView
+	selector        *components.ModelSelector
+	bus             *chat.Bus
+	provider        types.Provider
+	responses       chan *types.ChatResponse
+	renderer        *glamour.TermRenderer
+	logger          *logger.Logger
+	modelName       string
+	currentResp     string
+	currentThinking string
+	width           int
+	height          int
+	mode            mode
+	err             error
 }
 
 type Config struct {
@@ -62,7 +67,7 @@ func New(cfg Config) *Model {
 
 	mainWidth := cfg.Width * 2 / 3
 
-	return &Model{
+	m := &Model{
 		input:     components.NewInputArea(),
 		chatView:  components.NewChatView(mainWidth, cfg.Height/2),
 		selector:  components.NewModelSelector(mainWidth, cfg.Height/4),
@@ -72,8 +77,12 @@ func New(cfg Config) *Model {
 		renderer:  renderer,
 		logger:    cfg.Logger,
 		modelName: cfg.ModelName,
+		width:     cfg.Width,
+		height:    cfg.Height,
 		mode:      modeChat,
 	}
+	m.updateLayout()
+	return m
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -119,14 +128,18 @@ func (m *Model) View() string {
 	if m.mode == modeModelSelect {
 		return m.selector.View()
 	}
+
+	thinking := m.renderThinkingBox()
+	if thinking != "" {
+		return fmt.Sprintf("%s\n%s\n%s", m.chatView.Viewport.View(), thinking, m.input.Textarea.View())
+	}
 	return fmt.Sprintf("%s\n\n%s", m.chatView.Viewport.View(), m.input.Textarea.View())
 }
 
 func (m *Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
-	mainWidth := msg.Width * 2 / 3
-	m.chatView.Viewport.Width = mainWidth
-	m.input.Textarea.SetWidth(mainWidth)
-	m.chatView.Viewport.Height = msg.Height - m.input.Textarea.Height() - 4
+	m.width = msg.Width
+	m.height = msg.Height
+	m.updateLayout()
 	if len(m.chatView.Messages) > 0 {
 		m.chatView.Render()
 	}
@@ -136,6 +149,10 @@ func (m *Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 func (m *Model) handleResponse(msg responseMsg) (tea.Model, tea.Cmd) {
 	if msg == nil {
 		return m, nil
+	}
+	if msg.Thinking != "" {
+		m.currentThinking += msg.Thinking
+		m.updateLayout()
 	}
 	if msg.Response != "" {
 		m.currentResp += msg.Response
@@ -153,6 +170,8 @@ func (m *Model) handleResponse(msg responseMsg) (tea.Model, tea.Cmd) {
 	rendered, _ := m.renderer.Render(m.currentResp)
 	m.chatView.Append(formatMsg(m.modelName, rendered, styles.AI))
 	m.currentResp = ""
+	m.currentThinking = ""
+	m.updateLayout()
 	return m, nil
 }
 
@@ -167,6 +186,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case tea.KeyEnter:
 		prompt := m.input.Textarea.Value()
+		m.currentThinking = ""
+		m.updateLayout()
 		m.chatView.Append(styles.User.Render("You: ") + prompt)
 		m.input.Textarea.Reset()
 		req := m.provider.GenerateRequest(prompt)
@@ -182,6 +203,57 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.selector.Toggle()
 	}
 	return m, nil
+}
+
+func (m *Model) updateLayout() {
+	mainWidth := m.width * 2 / 3
+	m.chatView.Viewport.Width = mainWidth
+	m.input.Textarea.SetWidth(mainWidth)
+
+	reserved := m.input.Textarea.Height() + 4
+	if m.currentThinking != "" {
+		reserved += thinkingContentHeight + 3
+	}
+	m.chatView.Viewport.Height = max(1, m.height-reserved)
+}
+
+func (m *Model) renderThinkingBox() string {
+	if strings.TrimSpace(m.currentThinking) == "" {
+		return ""
+	}
+
+	width := max(20, m.chatView.Viewport.Width)
+	contentWidth := max(10, width-4)
+	lines := wrapText(m.currentThinking, contentWidth)
+	if len(lines) > thinkingContentHeight {
+		lines = lines[len(lines)-thinkingContentHeight:]
+	}
+
+	body := styles.ThinkingTitle.Render("Thinking") + "\n" + strings.Join(lines, "\n")
+	return styles.ThinkingBox.Width(width - 2).Render(body)
+}
+
+func wrapText(text string, width int) []string {
+	var lines []string
+	for _, raw := range strings.Split(text, "\n") {
+		words := strings.Fields(raw)
+		if len(words) == 0 {
+			lines = append(lines, "")
+			continue
+		}
+
+		line := words[0]
+		for _, word := range words[1:] {
+			if len(line)+1+len(word) > width {
+				lines = append(lines, line)
+				line = word
+				continue
+			}
+			line += " " + word
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func waitForResponse(ch chan *types.ChatResponse) tea.Cmd {

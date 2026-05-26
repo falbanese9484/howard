@@ -16,7 +16,8 @@ import (
 )
 
 func main() {
-	model := "qwen3.5:9b"
+	cfg := types.LoadConfig()
+	model := cfg.Model
 	if len(os.Args) > 1 {
 		model = os.Args[1]
 	}
@@ -44,9 +45,17 @@ func initModel(modelName string) tea.Model {
 	}
 
 	cache := types.NewModelCache(3600)
-	prov, err := provider.NewOpenRouter(log, "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", "qwen/qwen3.7-max", cache)
-	if err != nil {
-		panic(err)
+	cfg := types.LoadConfig()
+	var prov types.Provider
+
+	switch cfg.Provider {
+	case "ollama":
+		prov = provider.NewOllama(log, modelName, cache)
+	default:
+		prov, err = provider.NewOpenRouter(log, "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", "qwen/qwen3.7-max", cache)
+		if err != nil {
+			log.Fatal("Failed to initialize provider: ", err)
+		}
 	}
 
 	bus := chat.NewBus(log, prov)

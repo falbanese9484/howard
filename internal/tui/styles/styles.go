@@ -25,4 +25,14 @@ var (
 	Title = lipgloss.NewStyle().
 		Bold(true).
 		Padding(2)
+
+	ThinkingTitle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("228")).
+			Bold(true)
+
+	ThinkingBox = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("244")).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Padding(0, 1)
 )

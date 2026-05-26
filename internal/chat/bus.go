@@ -33,7 +33,7 @@ func (b *Bus) Start(out chan *types.ChatResponse) {
 			out <- response
 		case err := <-b.Error:
 			b.logger.Error("chat error", "error", err)
-			return
+			out <- &types.ChatResponse{Done: true}
 		case <-b.Done:
 			b.logger.Debug("message complete")
 			out <- &types.ChatResponse{Done: true}
