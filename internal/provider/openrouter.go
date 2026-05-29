@@ -15,6 +15,7 @@ import (
 
 	"github.com/falbanese9484/agent-harness/internal/logger"
 	"github.com/falbanese9484/agent-harness/internal/types"
+	"github.com/falbanese9484/agent-harness/pkg/config"
 )
 
 const (
@@ -27,7 +28,7 @@ type OpenRouter struct {
 	apiKey     string
 	model      string
 	messages   []openRouterMessage
-	tools      []types.Tool
+	tools      []config.ToolConfig
 	modelCache *types.ModelCache
 	logger     *logger.Logger
 }
@@ -85,32 +86,26 @@ type openRouterModelsResponse struct {
 	} `json:"data"`
 }
 
-func NewOpenRouter(log *logger.Logger, apiKey, model string, cache *types.ModelCache) (*OpenRouter, error) {
-	if apiKey == "" {
+func NewOpenRouter(log *logger.Logger, cfg *config.AgentConfig, cache *types.ModelCache) (*OpenRouter, error) {
+	if cfg.ApiKey == "" {
 		return nil, errors.New("OpenRouter API key required")
 	}
 
-	tools, err := loadToolsConfig()
-	if err != nil && log != nil {
-		log.Warn("failed to load tools config", "error", err)
-	}
+	tools := cfg.Tools
 	if len(tools) > 0 && log != nil {
 		log.Info("loaded tools config", "tools", len(tools))
 	}
 
 	messages := []openRouterMessage{}
-	systemPrompt, err := loadSystemPrompt()
-	if err != nil && log != nil {
-		log.Warn("failed to load system prompt", "error", err)
-	}
+	systemPrompt := config.BuildSystemPrompt(cfg.SystemPrompt)
 	if systemPrompt != "" {
 		messages = append(messages, openRouterMessage{Role: "system", Content: systemPrompt})
 	}
 
 	return &OpenRouter{
 		url:        openRouterChatURL,
-		apiKey:     apiKey,
-		model:      model,
+		apiKey:     cfg.ApiKey,
+		model:      cfg.Model,
 		messages:   messages,
 		tools:      tools,
 		modelCache: cache,
@@ -174,7 +169,7 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 	conn.ErrorChan <- fmt.Errorf("maximum tool call rounds exceeded")
 }
 
-func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMessage, tools []types.Tool) (openRouterMessage, []types.ToolCall, error) {
+func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMessage, tools []config.ToolConfig) (openRouterMessage, []types.ToolCall, error) {
 	reqBody := openRouterRequest{
 		Model:    o.model,
 		Messages: messages,

@@ -13,22 +13,22 @@ import (
 	"github.com/falbanese9484/agent-harness/internal/tui"
 	"github.com/falbanese9484/agent-harness/internal/tui/styles"
 	"github.com/falbanese9484/agent-harness/internal/types"
+	"github.com/falbanese9484/agent-harness/pkg/config"
 )
 
 func main() {
-	cfg := types.LoadConfig()
-	model := cfg.Model
-	if len(os.Args) > 1 {
-		model = os.Args[1]
+	cfg, err := config.LoadAgentConfig()
+	if err != nil {
+		log.Fatal("Failed to load config: ", err)
 	}
 
-	p := tea.NewProgram(initModel(model), tea.WithAltScreen())
+	p := tea.NewProgram(initModel(cfg), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func initModel(modelName string) tea.Model {
+func initModel(cfg *config.AgentConfig) tea.Model {
 	width, height, _ := term.GetSize(0)
 
 	logPath := os.Getenv("LOG_FILE_PATH")
@@ -45,17 +45,18 @@ func initModel(modelName string) tea.Model {
 	}
 
 	cache := types.NewModelCache(3600)
-	cfg := types.LoadConfig()
 	var prov types.Provider
 
 	switch cfg.Provider {
 	case "ollama":
-		prov = provider.NewOllama(log, modelName, cache)
-	default:
-		prov, err = provider.NewOpenRouter(log, "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", "qwen/qwen3.7-max", cache)
+		prov = provider.NewOllama(log, cfg, cache)
+	case "openrouter":
+		prov, err = provider.NewOpenRouter(log, cfg, cache)
 		if err != nil {
 			log.Fatal("Failed to initialize provider: ", err)
 		}
+	default:
+		log.Fatal("Unsupported provider: ", cfg.Provider)
 	}
 
 	bus := chat.NewBus(log, prov)
@@ -66,7 +67,7 @@ func initModel(modelName string) tea.Model {
 	m := tui.New(tui.Config{
 		Width:     width,
 		Height:    height,
-		ModelName: modelName,
+		ModelName: cfg.Model,
 		Provider:  prov,
 		Bus:       bus,
 		Responses: responses,
@@ -75,7 +76,7 @@ func initModel(modelName string) tea.Model {
 
 	// Set initial content
 	logo := styles.Logo.Render(tui.Logo) + styles.Title.Render(tui.Tagline) + "\n" +
-		styles.Connected.Render("Connected to: ") + styles.ConnectedModel.Render(modelName) + "\n\n"
+		styles.Connected.Render("Connected to: ") + styles.ConnectedModel.Render(cfg.Model) + "\n\n"
 	m.SetInitialContent(logo)
 
 	return m

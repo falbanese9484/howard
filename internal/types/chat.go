@@ -1,14 +1,18 @@
 package types
 
-import "context"
+import (
+	"context"
+
+	"github.com/falbanese9484/agent-harness/pkg/config"
+)
 
 type ChatRequest struct {
-	Model    string    `json:"model"`
-	Prompt   string    `json:"prompt,omitempty"`
-	Messages []Message `json:"messages,omitempty"`
-	Tools    []Tool    `json:"tools,omitempty"`
-	Stream   bool      `json:"stream"`
-	Context  []int     `json:"context,omitempty"`
+	Model    string              `json:"model"`
+	Prompt   string              `json:"prompt,omitempty"`
+	Messages []Message           `json:"messages,omitempty"`
+	Tools    []config.ToolConfig `json:"tools,omitempty"`
+	Stream   bool                `json:"stream"`
+	Context  []int               `json:"context,omitempty"`
 }
 
 type Message struct {
@@ -45,15 +49,4 @@ type BusConnector struct {
 	ResponseChan chan *ChatResponse
 	ErrorChan    chan error
 	DoneChannel  chan bool
-}
-
-type ToolParam struct {
-	Param       string `json:"param"`
-	Description string `json:"description"`
-}
-
-type Tool struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Parameters  []ToolParam `json:"parameters"`
 }

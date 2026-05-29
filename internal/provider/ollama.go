@@ -11,6 +11,7 @@ import (
 
 	"github.com/falbanese9484/agent-harness/internal/logger"
 	"github.com/falbanese9484/agent-harness/internal/types"
+	"github.com/falbanese9484/agent-harness/pkg/config"
 )
 
 const (
@@ -22,7 +23,7 @@ type Ollama struct {
 	url        string
 	model      string
 	messages   []types.Message
-	tools      []types.Tool
+	tools      []config.ToolConfig
 	modelCache *types.ModelCache
 	logger     *logger.Logger
 }
@@ -61,27 +62,21 @@ type ollamaToolProperty struct {
 	Description string `json:"description"`
 }
 
-func NewOllama(log *logger.Logger, model string, cache *types.ModelCache) *Ollama {
-	tools, err := loadToolsConfig()
-	if err != nil && log != nil {
-		log.Warn("failed to load tools config", "error", err)
-	}
+func NewOllama(log *logger.Logger, cfg *config.AgentConfig, cache *types.ModelCache) *Ollama {
+	tools := cfg.Tools
 	if len(tools) > 0 && log != nil {
 		log.Info("loaded tools config", "tools", len(tools))
 	}
 
 	messages := []types.Message{}
-	systemPrompt, err := loadSystemPrompt()
-	if err != nil && log != nil {
-		log.Warn("failed to load system prompt", "error", err)
-	}
+	systemPrompt := config.BuildSystemPrompt(cfg.SystemPrompt)
 	if systemPrompt != "" {
 		messages = append(messages, types.Message{Role: "system", Content: systemPrompt})
 	}
 
 	return &Ollama{
 		url:        ollamaChatURL,
-		model:      model,
+		model:      cfg.Model,
 		messages:   messages,
 		tools:      tools,
 		modelCache: cache,
@@ -144,7 +139,7 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 	conn.ErrorChan <- fmt.Errorf("maximum tool call rounds exceeded")
 }
 
-func (o *Ollama) sendChat(conn *types.BusConnector, messages []types.Message, tools []types.Tool) (types.Message, error) {
+func (o *Ollama) sendChat(conn *types.BusConnector, messages []types.Message, tools []config.ToolConfig) (types.Message, error) {
 	reqBody := ollamaChatRequest{
 		Model:    o.model,
 		Messages: messages,
@@ -208,7 +203,7 @@ func (o *Ollama) sendChat(conn *types.BusConnector, messages []types.Message, to
 	return types.Message{Role: "assistant", Content: assistant.String(), Thinking: thinking.String(), ToolCalls: toolCalls}, nil
 }
 
-func ollamaTools(tools []types.Tool) []ollamaTool {
+func ollamaTools(tools []config.ToolConfig) []ollamaTool {
 	if len(tools) == 0 {
 		return nil
 	}
@@ -218,11 +213,11 @@ func ollamaTools(tools []types.Tool) []ollamaTool {
 		properties := make(map[string]ollamaToolProperty, len(tool.Parameters))
 		required := make([]string, 0, len(tool.Parameters))
 		for _, param := range tool.Parameters {
-			properties[param.Param] = ollamaToolProperty{
+			properties[param.ParameterName] = ollamaToolProperty{
 				Type:        "string",
 				Description: param.Description,
 			}
-			required = append(required, param.Param)
+			required = append(required, param.ParameterName)
 		}
 
 		converted = append(converted, ollamaTool{
