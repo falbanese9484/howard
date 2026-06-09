@@ -6,6 +6,13 @@ import (
 	"github.com/falbanese9484/agent-harness/pkg/config"
 )
 
+type ResponseKind string
+
+const (
+	ResponseKindAssistant  ResponseKind = "assistant"
+	ResponseKindToolStatus ResponseKind = "tool_status"
+)
+
 type ChatRequest struct {
 	Model    string              `json:"model"`
 	Prompt   string              `json:"prompt,omitempty"`
@@ -36,11 +43,12 @@ type ToolCallFunction struct {
 }
 
 type ChatResponse struct {
-	Response  string     `json:"response"`
-	Context   []int      `json:"context,omitempty"`
-	Done      bool       `json:"done"`
-	Thinking  string     `json:"thinking"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	Response  string       `json:"response"`
+	Context   []int        `json:"context,omitempty"`
+	Done      bool         `json:"done"`
+	Thinking  string       `json:"thinking"`
+	ToolCalls []ToolCall   `json:"tool_calls,omitempty"`
+	Kind      ResponseKind `json:"kind,omitempty"`
 }
 
 type BusConnector struct {

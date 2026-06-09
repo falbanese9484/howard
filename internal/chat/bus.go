@@ -17,9 +17,9 @@ type Bus struct {
 
 func NewBus(log *logger.Logger, provider types.Provider) *Bus {
 	return &Bus{
-		Done:     make(chan bool),
-		Content:  make(chan *types.ChatResponse),
-		Error:    make(chan error),
+		Done:     make(chan bool, 1),
+		Content:  make(chan *types.ChatResponse, 16),
+		Error:    make(chan error, 1),
 		provider: provider,
 		logger:   log,
 	}
@@ -33,6 +33,7 @@ func (b *Bus) Start(out chan *types.ChatResponse) {
 			out <- response
 		case err := <-b.Error:
 			b.logger.Error("chat error", "error", err)
+			out <- &types.ChatResponse{Response: "Error: " + err.Error(), Done: false, Kind: types.ResponseKindToolStatus}
 			out <- &types.ChatResponse{Done: true}
 		case <-b.Done:
 			b.logger.Debug("message complete")

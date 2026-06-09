@@ -11,6 +11,10 @@ var (
 		Foreground(lipgloss.Color("12")).
 		Bold(true)
 
+	AITool = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("220")).
+		Bold(true)
+
 	Connected = lipgloss.NewStyle().
 			Italic(true).
 			Foreground(lipgloss.Color("241"))

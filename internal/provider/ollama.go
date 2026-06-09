@@ -108,7 +108,7 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 	}
 
 	const maxToolRounds = 100
-	for round := 0; round < maxToolRounds; round++ {
+	for range maxToolRounds {
 		assistantMsg, err := o.sendChat(conn, messages, tools)
 		if err != nil {
 			conn.ErrorChan <- err
@@ -123,7 +123,12 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 		}
 
 		for _, call := range assistantMsg.ToolCalls {
-			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s]\n", call.Function.Name)}
+			conn.ResponseChan <- &types.ChatResponse{
+				Response: fmt.Sprintf("\n[executing tool: %s -- %s]\n",
+					call.Function.Name,
+					call.Function.Arguments),
+				Kind: types.ResponseKindToolStatus, Context: conn.Request.Context,
+			}
 			result, err := executeToolCall(call)
 			if err != nil {
 				result = "tool error: " + err.Error()
@@ -139,7 +144,11 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 	conn.ErrorChan <- fmt.Errorf("maximum tool call rounds exceeded")
 }
 
-func (o *Ollama) sendChat(conn *types.BusConnector, messages []types.Message, tools []config.ToolConfig) (types.Message, error) {
+func (o *Ollama) sendChat(
+	conn *types.BusConnector,
+	messages []types.Message,
+	tools []config.ToolConfig,
+) (types.Message, error) {
 	reqBody := ollamaChatRequest{
 		Model:    o.model,
 		Messages: messages,
@@ -190,10 +199,18 @@ func (o *Ollama) sendChat(conn *types.BusConnector, messages []types.Message, to
 				Response:  chunk.Message.Content,
 				Thinking:  chunk.Message.Thinking,
 				ToolCalls: chunk.Message.ToolCalls,
+				Done:      false,
+				Kind:      types.ResponseKindAssistant,
+				Context:   conn.Request.Context,
 			}
 		}
 		if chunk.Done {
-			return types.Message{Role: "assistant", Content: assistant.String(), Thinking: thinking.String(), ToolCalls: toolCalls}, nil
+			return types.Message{
+				Role:      "assistant",
+				Content:   assistant.String(),
+				Thinking:  thinking.String(),
+				ToolCalls: toolCalls,
+			}, nil
 		}
 	}
 

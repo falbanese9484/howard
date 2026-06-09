@@ -86,7 +86,11 @@ type openRouterModelsResponse struct {
 	} `json:"data"`
 }
 
-func NewOpenRouter(log *logger.Logger, cfg *config.AgentConfig, cache *types.ModelCache) (*OpenRouter, error) {
+func NewOpenRouter(
+	log *logger.Logger,
+	cfg *config.AgentConfig,
+	cache *types.ModelCache,
+) (*OpenRouter, error) {
 	if cfg.ApiKey == "" {
 		return nil, errors.New("OpenRouter API key required")
 	}
@@ -137,7 +141,7 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 	}
 
 	const maxToolRounds = 5
-	for round := 0; round < maxToolRounds; round++ {
+	for range maxToolRounds {
 		assistantMsg, calls, err := o.sendChat(conn, messages, tools)
 		if err != nil {
 			conn.ErrorChan <- err
@@ -152,7 +156,7 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 		}
 
 		for _, call := range calls {
-			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s]\n", call.Function.Name)}
+			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s]\n", call.Function.Name), Kind: types.ResponseKindToolStatus}
 			result, err := executeToolCall(call)
 			if err != nil {
 				result = "tool error: " + err.Error()
@@ -256,7 +260,7 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMes
 		}
 
 		if delta.Content != "" || thinkingText != "" {
-			conn.ResponseChan <- &types.ChatResponse{Response: delta.Content, Thinking: thinkingText}
+			conn.ResponseChan <- &types.ChatResponse{Response: delta.Content, Thinking: thinkingText, Done: false, Kind: types.ResponseKindAssistant, Context: conn.Request.Context}
 		}
 	}
 

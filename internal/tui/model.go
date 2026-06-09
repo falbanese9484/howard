@@ -43,6 +43,7 @@ type Model struct {
 	modelName       string
 	currentResp     string
 	currentThinking string
+	isResponding    bool
 	width           int
 	height          int
 	mode            mode
@@ -146,18 +147,48 @@ func (m *Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) renderCurrentResponse() string {
+	rendered, err := m.renderer.Render(m.currentResp)
+	if err != nil {
+		return m.currentResp
+	}
+	return rendered
+}
+
+func (m *Model) commitCurrentResponse() {
+	if strings.TrimSpace(m.currentResp) == "" {
+		m.currentResp = ""
+		return
+	}
+
+	m.chatView.Append(formatMsg(m.modelName, m.renderCurrentResponse(), styles.AI))
+	m.currentResp = ""
+}
+
 func (m *Model) handleResponse(msg responseMsg) (tea.Model, tea.Cmd) {
 	if msg == nil {
 		return m, nil
 	}
+
+	if msg.Kind == types.ResponseKindToolStatus {
+		m.commitCurrentResponse()
+		m.chatView.Append(formatMsg("Tool", strings.TrimSpace(msg.Response), styles.AITool))
+		if !msg.Done {
+			return m, waitForResponse(m.responses)
+		}
+		m.currentThinking = ""
+		m.isResponding = false
+		m.updateLayout()
+		return m, nil
+	}
+
 	if msg.Thinking != "" {
 		m.currentThinking += msg.Thinking
 		m.updateLayout()
 	}
 	if msg.Response != "" {
 		m.currentResp += msg.Response
-		rendered, _ := m.renderer.Render(m.currentResp)
-		all := append(m.chatView.Messages, formatMsg(m.modelName, rendered, styles.AI))
+		all := append(m.chatView.Messages, formatMsg(m.modelName, m.currentResp, styles.AI))
 		m.chatView.Viewport.SetContent(
 			lipgloss.NewStyle().Width(m.chatView.Viewport.Width).Render(strings.Join(all, "\n")),
 		)
@@ -167,10 +198,9 @@ func (m *Model) handleResponse(msg responseMsg) (tea.Model, tea.Cmd) {
 		return m, waitForResponse(m.responses)
 	}
 
-	rendered, _ := m.renderer.Render(m.currentResp)
-	m.chatView.Append(formatMsg(m.modelName, rendered, styles.AI))
-	m.currentResp = ""
+	m.commitCurrentResponse()
 	m.currentThinking = ""
+	m.isResponding = false
 	m.updateLayout()
 	return m, nil
 }
@@ -185,8 +215,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case tea.KeyEnter:
-		prompt := m.input.Textarea.Value()
+		if m.isResponding {
+			return m, nil
+		}
+
+		prompt := strings.TrimSpace(m.input.Textarea.Value())
+		if prompt == "" {
+			return m, nil
+		}
+
+		m.currentResp = ""
 		m.currentThinking = ""
+		m.isResponding = true
 		m.updateLayout()
 		m.chatView.Append(styles.User.Render("You: ") + prompt)
 		m.input.Textarea.Reset()
