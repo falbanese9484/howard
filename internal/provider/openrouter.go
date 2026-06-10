@@ -140,7 +140,7 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 		tools = o.tools
 	}
 
-	const maxToolRounds = 5
+	const maxToolRounds = 100
 	for range maxToolRounds {
 		assistantMsg, calls, err := o.sendChat(conn, messages, tools)
 		if err != nil {
