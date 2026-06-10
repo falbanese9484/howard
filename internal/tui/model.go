@@ -188,7 +188,7 @@ func (m *Model) handleResponse(msg responseMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.Response != "" {
 		m.currentResp += msg.Response
-		all := append(m.chatView.Messages, formatMsg(m.modelName, m.currentResp, styles.AI))
+		all := append(m.chatView.Messages, formatMsg(m.modelName, m.renderCurrentResponse(), styles.AI))
 		m.chatView.Viewport.SetContent(
 			lipgloss.NewStyle().Width(m.chatView.Viewport.Width).Render(strings.Join(all, "\n")),
 		)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -22,6 +23,22 @@ const (
 	openRouterChatURL   = "https://openrouter.ai/api/v1/chat/completions"
 	openRouterModelsURL = "https://openrouter.ai/api/v1/models"
 )
+
+// openRouterStreamClient bounds connection setup and time-to-first-byte, but
+// deliberately has no overall Timeout: a total timeout would cut off long
+// streaming responses mid-stream. Cancellation is handled via the request
+// context.
+var openRouterStreamClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+	},
+}
 
 type OpenRouter struct {
 	url        string
@@ -193,8 +210,7 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMes
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+o.apiKey)
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := openRouterStreamClient.Do(req)
 	if err != nil {
 		return openRouterMessage{}, nil, err
 	}
