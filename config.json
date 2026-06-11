@@ -31,6 +31,7 @@
           "Use edit_file for precise replacements only when old_text appears exactly once.",
           "Use write_file to create new files only; use edit_file for existing files.",
           "Use mkdir to create directories.",
+          "Use bash to run shell commands like builds, tests, and formatters; prefer the dedicated file tools for file operations.",
           "Do not access paths outside the project root."
         ]
       }
@@ -96,6 +97,16 @@
         {
           "param": "path",
           "description": "Directory path to create, relative to the project root."
+        }
+      ]
+    },
+    {
+      "name": "bash",
+      "description": "Run a bash command from the project root. Returns combined stdout and stderr. Times out after 60 seconds.",
+      "parameters": [
+        {
+          "param": "command",
+          "description": "The bash command to run, e.g. 'go build ./...' or 'go test ./...'."
         }
       ]
     }

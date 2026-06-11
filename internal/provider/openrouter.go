@@ -173,7 +173,7 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 		}
 
 		for _, call := range calls {
-			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s]\n", call.Function.Name), Kind: types.ResponseKindToolStatus}
+			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s - %s]\n", call.Function.Name, call.Function.Arguments), Kind: types.ResponseKindToolStatus}
 			result, err := executeToolCall(call)
 			if err != nil {
 				result = "tool error: " + err.Error()

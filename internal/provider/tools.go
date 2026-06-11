@@ -1,15 +1,20 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/falbanese9484/agent-harness/internal/types"
 )
+
+const bashTimeout = 60 * time.Second
 
 func executeToolCall(call types.ToolCall) (string, error) {
 	switch call.Function.Name {
@@ -23,6 +28,8 @@ func executeToolCall(call types.ToolCall) (string, error) {
 		return executeWriteFile(call.Function.Arguments)
 	case "mkdir":
 		return executeMkdir(call.Function.Arguments)
+	case "bash":
+		return executeBash(call.Function.Arguments)
 	default:
 		return "", fmt.Errorf("unknown tool: %s", call.Function.Name)
 	}
@@ -150,6 +157,36 @@ func executeWriteFile(args map[string]any) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("created file %s", path), nil
+}
+
+func executeBash(args map[string]any) (string, error) {
+	command := stringArg(args, "command", "")
+	if command == "" {
+		return "", fmt.Errorf("command is required")
+	}
+
+	root, err := findProjectRoot()
+	if err != nil {
+		return "", err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), bashTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	cmd.Dir = root
+	outputBytes, err := cmd.CombinedOutput()
+	output := string(outputBytes)
+	if ctx.Err() == context.DeadlineExceeded {
+		return output, fmt.Errorf("command timed out after %s; output: %s", bashTimeout, output)
+	}
+	if err != nil {
+		return output, fmt.Errorf("command failed: %w; output: %s", err, output)
+	}
+	if output == "" {
+		output = "(no output)"
+	}
+	return output, nil
 }
 
 func executeMkdir(args map[string]any) (string, error) {

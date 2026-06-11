@@ -4,7 +4,7 @@ A focused coding agent harness built in Go. Runs a terminal UI (TUI) agent that 
 
 ## Features
 - Terminal UI built with Bubble Tea + Lip Gloss, markdown rendering via Glamour
-- Tool-using agent (ls, read_file, edit_file, write_file, mkdir), sandboxed to the project root
+- Tool-using agent (ls, read_file, edit_file, write_file, mkdir, bash); file tools are sandboxed to the project root, while bash runs with your full user permissions
 - Pluggable providers: Ollama (local) and OpenRouter
 - Runtime model switching (Ctrl+F opens a model selector)
 - System prompt and tool definitions driven by a JSON config
@@ -46,7 +46,7 @@ Keybindings:
 - `model`: model name to use (e.g. an Ollama tag or OpenRouter model ID)
 - `apikey`: API key (required for OpenRouter)
 - `system_prompt`: agent identity and operating principles split into titled sections
-- `tools`: definitions for available tools (ls, read_file, edit_file, write_file, mkdir)
+- `tools`: definitions for available tools (ls, read_file, edit_file, write_file, mkdir, bash)
 
 Logs are written to `./logs/harness.log` by default; override the directory with the `LOG_FILE_PATH` env var.
 

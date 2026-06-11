@@ -223,6 +223,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if prompt == "" {
 			return m, nil
 		}
+		if prompt == "exit" {
+			return m, tea.Quit
+		}
 
 		m.currentResp = ""
 		m.currentThinking = ""
