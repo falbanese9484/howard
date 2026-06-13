@@ -118,7 +118,7 @@ func NewOpenRouter(
 	}
 
 	messages := []openRouterMessage{}
-	systemPrompt := config.BuildSystemPrompt(cfg.SystemPrompt)
+	systemPrompt := config.BuildSystemPrompt(cfg.SystemPrompt, tools)
 	if systemPrompt != "" {
 		messages = append(messages, openRouterMessage{Role: "system", Content: systemPrompt})
 	}

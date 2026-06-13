@@ -48,6 +48,7 @@ type Model struct {
 	height          int
 	mode            mode
 	err             error
+	clipboard       *history
 }
 
 type Config struct {
@@ -81,6 +82,7 @@ func New(cfg Config) *Model {
 		width:     cfg.Width,
 		height:    cfg.Height,
 		mode:      modeChat,
+		clipboard: historyInit(10),
 	}
 	m.updateLayout()
 	return m
@@ -207,6 +209,22 @@ func (m *Model) handleResponse(msg responseMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
+	case tea.KeyUp, tea.KeyDown:
+		if m.mode == modeModelSelect {
+			return m, m.selector.Update(msg)
+		}
+		// Navigate clipboard
+
+		if msg.Type == tea.KeyUp {
+			prompt := m.clipboard.Prev()
+			if prompt != "" {
+				m.input.Textarea.SetValue(prompt)
+			}
+		} else {
+			m.input.Textarea.SetValue(m.clipboard.Next())
+		}
+		return m, nil
+
 	case tea.KeyCtrlC, tea.KeyEscape:
 		if m.mode == modeModelSelect {
 			m.selector.Toggle()
@@ -226,6 +244,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if prompt == "exit" {
 			return m, tea.Quit
 		}
+
+		m.clipboard.Push(prompt)
 
 		m.currentResp = ""
 		m.currentThinking = ""

@@ -1,0 +1,76 @@
+{
+  "tools": [
+    {
+      "name": "ls",
+      "description": "List files and directories at a given path.",
+      "parameters": [
+        {
+          "param": "path",
+          "description": "Directory path to list. Use '.' for the current project root."
+        }
+      ]
+    },
+    {
+      "name": "read_file",
+      "description": "Read the full contents of a text file in the project.",
+      "parameters": [
+        {
+          "param": "path",
+          "description": "File path to read, relative to the project root."
+        }
+      ]
+    },
+    {
+      "name": "edit_file",
+      "description": "Edit a text file by replacing one exact, unique text block with new text.",
+      "parameters": [
+        {
+          "param": "path",
+          "description": "File path to edit, relative to the project root."
+        },
+        {
+          "param": "old_text",
+          "description": "Exact existing text to replace. It must appear exactly once in the file."
+        },
+        {
+          "param": "new_text",
+          "description": "Replacement text."
+        }
+      ]
+    },
+    {
+      "name": "bash",
+      "description": "Run a bash command from the project root. Returns combined stdout and stderr. Times out after 60 seconds.",
+      "parameters": [
+        {
+          "param": "command",
+          "description": "The bash command to run, e.g. 'go build ./...' or 'go test ./...'."
+        }
+      ]
+    },
+    {
+      "name": "write_file",
+      "description": "Create a new text file with the provided content. Fails if the file already exists.",
+      "parameters": [
+        {
+          "param": "path",
+          "description": "New file path, relative to the project root. Parent directories are created automatically."
+        },
+        {
+          "param": "content",
+          "description": "Full file content to write."
+        }
+      ]
+    },
+    {
+      "name": "mkdir",
+      "description": "Create a directory, including parent directories if needed.",
+      "parameters": [
+        {
+          "param": "path",
+          "description": "Directory path to create, relative to the project root."
+        }
+      ]
+    }
+  ]
+}

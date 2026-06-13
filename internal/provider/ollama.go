@@ -69,7 +69,7 @@ func NewOllama(log *logger.Logger, cfg *config.AgentConfig, cache *types.ModelCa
 	}
 
 	messages := []types.Message{}
-	systemPrompt := config.BuildSystemPrompt(cfg.SystemPrompt)
+	systemPrompt := config.BuildSystemPrompt(cfg.SystemPrompt, tools)
 	if systemPrompt != "" {
 		messages = append(messages, types.Message{Role: "system", Content: systemPrompt})
 	}

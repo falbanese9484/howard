@@ -1,4 +1,10 @@
-# agent-harness
+# howard - a minimal local AI agent
+
+## Mission
+There are a lot of coding agents and harnesses out there, and this is very much another one. But the goal of this project is less
+about having all the bells and whistles - but aims to be as minimal as possible, with an emphasis on getting the absolute most 
+out of light weight open source models, and to carry a small footprint. We aim to have strong traceability, observability up to standards to
+work anywhere from the cloud to local when security and compliance matter most.
 
 A focused coding agent harness built in Go. Runs a terminal UI (TUI) agent that inspects projects, explains tradeoffs, and makes precise, style-preserving code edits via configurable LLM providers.
 
@@ -7,7 +13,7 @@ A focused coding agent harness built in Go. Runs a terminal UI (TUI) agent that 
 - Tool-using agent (ls, read_file, edit_file, write_file, mkdir, bash); file tools are sandboxed to the project root, while bash runs with your full user permissions
 - Pluggable providers: Ollama (local) and OpenRouter
 - Runtime model switching (Ctrl+F opens a model selector)
-- System prompt and tool definitions driven by a JSON config
+- System prompt driven by JSON config, with built-in tools embedded from `pkg/config/tools.json`
 - Small, targeted edits by design: edit_file requires an exact, unique text match
 
 ## Project Layout
@@ -46,7 +52,7 @@ Keybindings:
 - `model`: model name to use (e.g. an Ollama tag or OpenRouter model ID)
 - `apikey`: API key (required for OpenRouter)
 - `system_prompt`: agent identity and operating principles split into titled sections
-- `tools`: definitions for available tools (ls, read_file, edit_file, write_file, mkdir, bash)
+- `tools`: optional additional tool definitions. Built-in tools are embedded from `pkg/config/tools.json`; entries in user config with the same name override the built-in definition, and new names are appended.
 
 Logs are written to `./logs/harness.log` by default; override the directory with the `LOG_FILE_PATH` env var.
 

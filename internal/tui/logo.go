@@ -8,4 +8,4 @@ const Logo = `
 |_| |_|\___/ \_/\_/ \__,_|_|  \__,_|
 `
 
-const Tagline = "Howard — local coding agent"
+const Tagline = "Howard — a minimal multi-purpose agent"
