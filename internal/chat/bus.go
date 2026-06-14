@@ -37,10 +37,10 @@ func (b *Bus) Start(out chan *types.ChatResponse) {
 		case err := <-b.Error:
 			b.logger.Error("chat error", "error", err)
 			out <- &types.ChatResponse{
-				Response: "Error: " + err.Error(),
-				Done:     false, Kind: types.ResponseKindToolStatus,
+				Response: err.Error(),
+				Done:     true,
+				Kind:     types.ResponseKindError,
 			}
-			out <- &types.ChatResponse{Done: true}
 		case <-b.Done:
 			b.logger.Debug("message complete")
 			out <- &types.ChatResponse{Done: true}

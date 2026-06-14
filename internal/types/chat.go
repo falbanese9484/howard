@@ -11,6 +11,7 @@ type ResponseKind string
 const (
 	ResponseKindAssistant  ResponseKind = "assistant"
 	ResponseKindToolStatus ResponseKind = "tool_status"
+	ResponseKindError      ResponseKind = "error"
 )
 
 type ChatRequest struct {

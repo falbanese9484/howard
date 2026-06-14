@@ -81,6 +81,9 @@ func runPrompt(args []string, ioStreams IO) error {
 		if response == nil {
 			continue
 		}
+		if response.Kind == types.ResponseKindError {
+			return errors.New(strings.TrimSpace(response.Response))
+		}
 		if response.Done {
 			fmt.Fprintln(ioStreams.Stdout)
 			return nil

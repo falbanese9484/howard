@@ -172,6 +172,15 @@ func (m *Model) handleResponse(msg responseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if msg.Kind == types.ResponseKindError {
+		m.commitCurrentResponse()
+		m.chatView.Append(formatMsg("Error", strings.TrimSpace(msg.Response), styles.AITool))
+		m.currentThinking = ""
+		m.isResponding = false
+		m.updateLayout()
+		return m, nil
+	}
+
 	if msg.Kind == types.ResponseKindToolStatus {
 		m.commitCurrentResponse()
 		m.chatView.Append(formatMsg("Tool", strings.TrimSpace(msg.Response), styles.AITool))
