@@ -19,6 +19,14 @@ type AgentConfig struct {
 	Tools        []ToolConfig       `json:"tools"`
 }
 
+type AuthConfig struct {
+	Credentials map[string]ProviderAuth `json:"credentials"`
+}
+
+type ProviderAuth struct {
+	ApiKey string `json:"apikey,omitempty"`
+}
+
 type SystemPromptConfig struct {
 	Name     string                `json:"name"`
 	Sections []SystemPromptSection `json:"sections"`
@@ -59,6 +67,120 @@ func findUserConfig(name string) (string, error) {
 	return "", os.ErrNotExist
 }
 
+func UserConfigPath() (string, error) {
+	root, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, ".config", "howard", "config.json"), nil
+}
+
+func UserAuthPath() (string, error) {
+	root, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, ".config", "howard", "auth.json"), nil
+}
+
+func LoadUserAgentConfig() (*AgentConfig, error) {
+	path, err := UserConfigPath()
+	if err != nil {
+		return &AgentConfig{}, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return &AgentConfig{}, nil
+		}
+		return &AgentConfig{}, err
+	}
+
+	var cfg AgentConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return &AgentConfig{}, err
+	}
+	return &cfg, nil
+}
+
+func SaveAgentConfig(cfg *AgentConfig) error {
+	path, err := UserConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	configCopy := *cfg
+	configCopy.ApiKey = ""
+
+	data, err := json.MarshalIndent(&configCopy, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o600)
+}
+
+func LoadAuthConfig() (*AuthConfig, error) {
+	path, err := UserAuthPath()
+	if err != nil {
+		return &AuthConfig{}, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return &AuthConfig{Credentials: map[string]ProviderAuth{}}, nil
+		}
+		return &AuthConfig{}, err
+	}
+
+	var cfg AuthConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return &AuthConfig{}, err
+	}
+	if cfg.Credentials == nil {
+		cfg.Credentials = map[string]ProviderAuth{}
+	}
+	return &cfg, nil
+}
+
+func SaveAuthConfig(cfg *AuthConfig) error {
+	path, err := UserAuthPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o600)
+}
+
+func SetProviderAuth(provider, apiKey string) error {
+	cfg, err := LoadAuthConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Credentials == nil {
+		cfg.Credentials = map[string]ProviderAuth{}
+	}
+	if apiKey == "" {
+		delete(cfg.Credentials, provider)
+	} else {
+		cfg.Credentials[provider] = ProviderAuth{ApiKey: apiKey}
+	}
+	return SaveAuthConfig(cfg)
+}
+
 func LoadAgentConfig() (*AgentConfig, error) {
 	builtinTools, err := loadBuiltinTools()
 	if err != nil {
@@ -81,6 +203,13 @@ func LoadAgentConfig() (*AgentConfig, error) {
 	var cfg AgentConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return &AgentConfig{}, err
+	}
+	auth, err := LoadAuthConfig()
+	if err != nil {
+		return &AgentConfig{}, err
+	}
+	if credentials, ok := auth.Credentials[cfg.Provider]; ok && credentials.ApiKey != "" {
+		cfg.ApiKey = credentials.ApiKey
 	}
 	cfg.Tools = mergeTools(builtinTools, cfg.Tools)
 	return &cfg, nil

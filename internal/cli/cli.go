@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/falbanese9484/agent-harness/internal/app"
@@ -13,6 +14,7 @@ import (
 	"github.com/falbanese9484/agent-harness/internal/tuiapp"
 	"github.com/falbanese9484/agent-harness/internal/types"
 	"github.com/falbanese9484/agent-harness/pkg/config"
+	"golang.org/x/term"
 )
 
 type IO struct {
@@ -39,6 +41,8 @@ func Run(args []string, ioStreams IO) error {
 		return runPrompt(args[1:], ioStreams)
 	case "models":
 		return listModels(args[1:], ioStreams)
+	case "auth":
+		return authProvider(args[1:], ioStreams)
 	case "help", "-h", "--help":
 		printUsage(ioStreams.Stdout)
 		return nil
@@ -123,6 +127,62 @@ func listModels(args []string, ioStreams IO) error {
 	return nil
 }
 
+func authProvider(args []string, ioStreams IO) error {
+	if len(args) == 0 {
+		return errors.New("provider is required")
+	}
+	providerName := args[0]
+
+	flags := flag.NewFlagSet("auth", flag.ContinueOnError)
+	flags.SetOutput(ioStreams.Stderr)
+	key := flags.String("key", "", "API key/token for the provider")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() > 0 {
+		return fmt.Errorf("unexpected argument: %s", flags.Arg(0))
+	}
+
+	cfg, err := config.LoadUserAgentConfig()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	switch providerName {
+	case "openrouter":
+		apiKey := strings.TrimSpace(*key)
+		if apiKey == "" {
+			fmt.Fprint(ioStreams.Stderr, "OpenRouter API key: ")
+			password, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(ioStreams.Stderr)
+			if err != nil {
+				return err
+			}
+			apiKey = strings.TrimSpace(string(password))
+		}
+		if apiKey == "" {
+			return errors.New("API key is required")
+		}
+		cfg.Provider = "openrouter"
+		if err := config.SetProviderAuth("openrouter", apiKey); err != nil {
+			return fmt.Errorf("save auth: %w", err)
+		}
+	case "ollama":
+		cfg.Provider = "ollama"
+		if err := config.SetProviderAuth("ollama", ""); err != nil {
+			return fmt.Errorf("save auth: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported provider: %s", providerName)
+	}
+
+	if err := config.SaveAgentConfig(cfg); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	fmt.Fprintf(ioStreams.Stdout, "Authenticated %s and set it as the active provider.\n", providerName)
+	return nil
+}
+
 func loadRuntime() (*logger.Logger, types.Provider, error) {
 	cfg, err := config.LoadAgentConfig()
 	if err != nil {
@@ -147,9 +207,13 @@ func printUsage(w io.Writer) {
   howard tui             Launch the TUI
   howard run [flags] PROMPT
   howard models
+  howard auth PROVIDER [flags]
   howard help
 
 Run flags:
   -model string          Override the configured model
+
+Auth flags:
+  -key string            API key/token for the provider
 `)
 }

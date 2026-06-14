@@ -37,13 +37,16 @@ mkdir -p ~/.config/howard
 cp config_example.json ~/.config/howard/config.json
 go run ./cmd/howard
 ```
-Configuration is read from `~/.config/howard/config.json`; `config_example.json` in this repo is a template. Edit your copy to set the provider, model, API key if needed, and agent prompt.
+Configuration is read from `~/.config/howard/config.json`; `config_example.json` in this repo is a template. Edit your copy to set the provider, model, and agent prompt.
 
 CLI commands:
 - `howard` or `howard tui`: launch the interactive TUI
 - `howard run "prompt"`: send one prompt and stream the assistant response to stdout
 - `howard run -model llama3.2 "prompt"`: run one prompt with a temporary model override
 - `howard models`: list models from the configured provider
+- `howard auth openrouter`: securely store OpenRouter credentials and switch to OpenRouter
+- `howard auth openrouter -key sk-or-...`: non-interactively store OpenRouter credentials
+- `howard auth ollama`: switch to Ollama, which does not require credentials
 - `howard help`: show command usage
 
 During `howard run`, assistant text is written to stdout and tool/status messages are written to stderr.
@@ -56,9 +59,10 @@ Keybindings:
 ## Configuration
 - `provider`: `ollama` or `openrouter`
 - `model`: model name to use, such as an Ollama tag or OpenRouter model ID
-- `apikey`: API key (required for OpenRouter)
 - `system_prompt`: agent identity and operating principles split into titled sections
 - `tools`: optional additional tool definitions. Built-in tools are embedded from `pkg/config/tools.json`; entries in user config with the same name override the built-in definition, and new names are appended.
+
+Credentials are stored separately in `~/.config/howard/auth.json` by `howard auth`. Runtime config still comes from `~/.config/howard/config.json`.
 
 Logs are written to `./logs/harness.log` by default; set `LOG_FILE_PATH` to change the directory prefix.
 

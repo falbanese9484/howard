@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,5 +91,57 @@ func TestMergeToolsReplacesBaseAndAppendsExtensions(t *testing.T) {
 		if tools[i].Name != want[i].Name || tools[i].Description != want[i].Description {
 			t.Fatalf("mergeTools()[%d] = %#v, want %#v", i, tools[i], want[i])
 		}
+	}
+}
+
+func TestSaveAndLoadUserAgentConfigOmitsAPIKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg := &AgentConfig{
+		Provider: "openrouter",
+		Model:    "openai/gpt-4o-mini",
+		ApiKey:   "test-key",
+		SystemPrompt: SystemPromptConfig{
+			Name: "Howard",
+		},
+	}
+	if err := SaveAgentConfig(cfg); err != nil {
+		t.Fatalf("SaveAgentConfig() error = %v", err)
+	}
+
+	path := filepath.Join(home, ".config", "howard", "config.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected config at %s: %v", path, err)
+	}
+
+	loaded, err := LoadUserAgentConfig()
+	if err != nil {
+		t.Fatalf("LoadUserAgentConfig() error = %v", err)
+	}
+	if loaded.Provider != cfg.Provider || loaded.Model != cfg.Model || loaded.ApiKey != "" {
+		t.Fatalf("LoadUserAgentConfig() = %#v, want provider/model from %#v and empty apikey", loaded, cfg)
+	}
+}
+
+func TestSaveAndLoadAuthConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := SetProviderAuth("openrouter", "test-key"); err != nil {
+		t.Fatalf("SetProviderAuth() error = %v", err)
+	}
+
+	path := filepath.Join(home, ".config", "howard", "auth.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected auth config at %s: %v", path, err)
+	}
+
+	auth, err := LoadAuthConfig()
+	if err != nil {
+		t.Fatalf("LoadAuthConfig() error = %v", err)
+	}
+	if auth.Credentials["openrouter"].ApiKey != "test-key" {
+		t.Fatalf("openrouter auth key = %q, want test-key", auth.Credentials["openrouter"].ApiKey)
 	}
 }
