@@ -1,3 +1,5 @@
+// Package chat is the intermediate channel in which the backend providers connect
+// with the different application entrypoints
 package chat
 
 import (
@@ -6,6 +8,8 @@ import (
 	"github.com/falbanese9484/agent-harness/internal/logger"
 	"github.com/falbanese9484/agent-harness/internal/types"
 )
+
+// this is my favorite file in the codebase.
 
 type Bus struct {
 	Done     chan bool
@@ -29,11 +33,13 @@ func (b *Bus) Start(out chan *types.ChatResponse) {
 	for {
 		select {
 		case response := <-b.Content:
-			b.logger.Info("model raw response", "response", response.Response, "thinking", response.Thinking)
 			out <- response
 		case err := <-b.Error:
 			b.logger.Error("chat error", "error", err)
-			out <- &types.ChatResponse{Response: "Error: " + err.Error(), Done: false, Kind: types.ResponseKindToolStatus}
+			out <- &types.ChatResponse{
+				Response: "Error: " + err.Error(),
+				Done:     false, Kind: types.ResponseKindToolStatus,
+			}
 			out <- &types.ChatResponse{Done: true}
 		case <-b.Done:
 			b.logger.Debug("message complete")

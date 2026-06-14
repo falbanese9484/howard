@@ -62,7 +62,10 @@ type ollamaToolProperty struct {
 	Description string `json:"description"`
 }
 
-func NewOllama(log *logger.Logger, cfg *config.AgentConfig, cache *types.ModelCache) *Ollama {
+func NewOllama(log *logger.Logger,
+	cfg *config.AgentConfig,
+	cache *types.ModelCache,
+) *Ollama {
 	tools := cfg.Tools
 	if len(tools) > 0 && log != nil {
 		log.Info("loaded tools config", "tools", len(tools))
@@ -96,7 +99,10 @@ func (o *Ollama) GenerateRequest(prompt string) *types.ChatRequest {
 func (o *Ollama) Chat(conn *types.BusConnector) {
 	newMessages := conn.Request.Messages
 	if len(newMessages) == 0 && conn.Request.Prompt != "" {
-		newMessages = []types.Message{{Role: "user", Content: conn.Request.Prompt}}
+		newMessages = []types.Message{{
+			Role:    "user",
+			Content: conn.Request.Prompt,
+		}}
 	}
 
 	messages := append([]types.Message{}, o.messages...)
@@ -127,7 +133,8 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 				Response: fmt.Sprintf("\n[executing tool: %s -- %s]\n",
 					call.Function.Name,
 					call.Function.Arguments),
-				Kind: types.ResponseKindToolStatus, Context: conn.Request.Context,
+				Kind:    types.ResponseKindToolStatus,
+				Context: conn.Request.Context,
 			}
 			result, err := executeToolCall(call)
 			if err != nil {
@@ -161,7 +168,8 @@ func (o *Ollama) sendChat(
 		return types.Message{}, err
 	}
 
-	req, err := http.NewRequestWithContext(conn.Ctx, "POST", o.url, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(conn.Ctx, "POST",
+		o.url, bytes.NewReader(data))
 	if err != nil {
 		return types.Message{}, err
 	}
@@ -174,7 +182,8 @@ func (o *Ollama) sendChat(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return types.Message{}, fmt.Errorf("Ollama returned status %d", resp.StatusCode)
+		return types.Message{}, fmt.Errorf("Ollama returned status %d",
+			resp.StatusCode)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -217,7 +226,12 @@ func (o *Ollama) sendChat(
 	if err := scanner.Err(); err != nil {
 		return types.Message{}, err
 	}
-	return types.Message{Role: "assistant", Content: assistant.String(), Thinking: thinking.String(), ToolCalls: toolCalls}, nil
+	return types.Message{
+		Role:      "assistant",
+		Content:   assistant.String(),
+		Thinking:  thinking.String(),
+		ToolCalls: toolCalls,
+	}, nil
 }
 
 func ollamaTools(tools []config.ToolConfig) []ollamaTool {

@@ -1,12 +1,9 @@
 # howard - a minimal local AI agent
 
 ## Mission
-There are a lot of coding agents and harnesses out there, and this is very much another one. But the goal of this project is less
-about having all the bells and whistles - but aims to be as minimal as possible, with an emphasis on getting the absolute most 
-out of light weight open source models, and to carry a small footprint. We aim to have strong traceability, observability up to standards to
-work anywhere from the cloud to local when security and compliance matter most.
+There are a lot of coding agents and harnesses out there, and this is very much another one. The goal is not to have every possible bell and whistle; it is to stay small, understandable, and useful, with an emphasis on getting the most out of lightweight open source models.
 
-A focused coding agent harness built in Go. Runs a terminal UI (TUI) agent that inspects projects, explains tradeoffs, and makes precise, style-preserving code edits via configurable LLM providers.
+Howard is a focused coding agent harness built in Go. It runs a terminal UI (TUI) agent that inspects projects, explains tradeoffs, and makes precise, style-preserving code edits via configurable LLM providers.
 
 ## Features
 - Terminal UI built with Bubble Tea + Lip Gloss, markdown rendering via Glamour
@@ -18,15 +15,15 @@ A focused coding agent harness built in Go. Runs a terminal UI (TUI) agent that 
 
 ## Project Layout
 ```
-cmd/harness/     # entrypoint
+cmd/tui/         # TUI entrypoint
 internal/
   chat/          # message bus between provider and TUI
   provider/      # ollama, openrouter, tool execution
   tui/           # bubbletea model, components, styles
   types/         # shared types
   logger/        # logging
-pkg/config/      # agent config loading + system prompt builder
-config.json      # example config (copy to ~/.config/howard/config.json)
+pkg/config/         # agent config loading + system prompt builder
+config_example.json # example config (copy to ~/.config/howard/config.json)
 ```
 
 ## Requirements
@@ -37,10 +34,10 @@ config.json      # example config (copy to ~/.config/howard/config.json)
 ## Usage
 ```bash
 mkdir -p ~/.config/howard
-cp config.json ~/.config/howard/config.json
-go run ./cmd/harness
+cp config_example.json ~/.config/howard/config.json
+go run ./cmd/tui
 ```
-Configuration is read from `~/.config/howard/config.json`; the `config.json` in this repo is a template. Edit your copy to switch providers or tweak the agent identity/prompt/tools.
+Configuration is read from `~/.config/howard/config.json`; `config_example.json` in this repo is a template. Edit your copy to set the provider, model, API key if needed, and agent prompt.
 
 Keybindings:
 - `Enter` — send prompt
@@ -49,12 +46,12 @@ Keybindings:
 
 ## Configuration
 - `provider`: `ollama` or `openrouter`
-- `model`: model name to use (e.g. an Ollama tag or OpenRouter model ID)
+- `model`: model name to use, such as an Ollama tag or OpenRouter model ID
 - `apikey`: API key (required for OpenRouter)
 - `system_prompt`: agent identity and operating principles split into titled sections
 - `tools`: optional additional tool definitions. Built-in tools are embedded from `pkg/config/tools.json`; entries in user config with the same name override the built-in definition, and new names are appended.
 
-Logs are written to `./logs/harness.log` by default; override the directory with the `LOG_FILE_PATH` env var.
+Logs are written to `./logs/harness.log` by default; set `LOG_FILE_PATH` to change the directory prefix.
 
 ## Development
 ```bash

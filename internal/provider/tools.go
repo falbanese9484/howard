@@ -14,6 +14,8 @@ import (
 	"github.com/falbanese9484/agent-harness/internal/types"
 )
 
+// Sandbox utility functions for Agentic Tooling
+
 const bashTimeout = 60 * time.Second
 
 func executeToolCall(call types.ToolCall) (string, error) {
@@ -90,6 +92,7 @@ func executeReadFile(args map[string]any) (string, error) {
 }
 
 func executeEditFile(args map[string]any) (string, error) {
+	// We implement edit_file as a find-and-replace, to avoid the complexity of merging concurrent edits.
 	path := stringArg(args, "path", "")
 	oldText := stringArg(args, "old_text", "")
 	newText := stringArg(args, "new_text", "")
@@ -130,13 +133,14 @@ func executeEditFile(args map[string]any) (string, error) {
 }
 
 func executeWriteFile(args map[string]any) (string, error) {
+	// write_file creates a new file with the specified content. It fails if the file already exists.
 	path := stringArg(args, "path", "")
 	content := stringArg(args, "content", "")
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
 
-	abs, err := resolveProjectPath(path, false)
+	abs, err := resolveNewProjectPath(path)
 	if err != nil {
 		return "", err
 	}
@@ -147,9 +151,6 @@ func executeWriteFile(args map[string]any) (string, error) {
 	}
 
 	parent := filepath.Dir(abs)
-	if err := ensureProjectParent(parent); err != nil {
-		return "", err
-	}
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return "", err
 	}
@@ -160,6 +161,9 @@ func executeWriteFile(args map[string]any) (string, error) {
 }
 
 func executeBash(args map[string]any) (string, error) {
+	// TODO:Consider implementing a more structured command execution, rather than raw bash,
+	// to improve security and reliability. i
+	// For example, we could support a limited set of commands with structured arguments.
 	command := stringArg(args, "command", "")
 	if command == "" {
 		return "", fmt.Errorf("command is required")
@@ -195,7 +199,7 @@ func executeMkdir(args map[string]any) (string, error) {
 		return "", fmt.Errorf("path is required")
 	}
 
-	abs, err := resolveProjectPath(path, false)
+	abs, err := resolveNewProjectPath(path)
 	if err != nil {
 		return "", err
 	}
@@ -203,17 +207,6 @@ func executeMkdir(args map[string]any) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("created directory %s", path), nil
-}
-
-func ensureProjectParent(parent string) error {
-	root, err := findProjectRoot()
-	if err != nil {
-		return err
-	}
-	if parent != root && !strings.HasPrefix(parent, root+string(os.PathSeparator)) {
-		return fmt.Errorf("parent path outside project root is not allowed")
-	}
-	return nil
 }
 
 func stringArg(args map[string]any, name, fallback string) string {
@@ -249,6 +242,61 @@ func resolveProjectPath(path string, mustExist bool) (string, error) {
 		return "", fmt.Errorf("path outside project root is not allowed: %s", path)
 	}
 	return abs, nil
+}
+
+func resolveNewProjectPath(path string) (string, error) {
+	root, err := findProjectRoot()
+	if err != nil {
+		return "", err
+	}
+
+	requested := path
+	if !filepath.IsAbs(requested) {
+		requested = filepath.Join(root, requested)
+	}
+	abs, err := filepath.Abs(requested)
+	if err != nil {
+		return "", err
+	}
+	if !isProjectPath(root, abs) {
+		return "", fmt.Errorf("path outside project root is not allowed: %s", path)
+	}
+
+	// For paths that do not exist yet, validate the nearest existing parent after
+	// resolving symlinks so create operations cannot write through a project-local
+	// symlink to an outside directory.
+	existing := abs
+	for {
+		if _, err := os.Stat(existing); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return "", os.ErrNotExist
+		}
+		existing = parent
+	}
+
+	resolvedExisting, err := filepath.EvalSymlinks(existing)
+	if err != nil {
+		return "", err
+	}
+	if !isProjectPath(root, resolvedExisting) {
+		return "", fmt.Errorf("path outside project root is not allowed: %s", path)
+	}
+
+	rel, err := filepath.Rel(existing, abs)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(resolvedExisting, rel), nil
+}
+
+func isProjectPath(root, path string) bool {
+	return path == root || strings.HasPrefix(path, root+string(os.PathSeparator))
 }
 
 func findProjectRoot() (string, error) {

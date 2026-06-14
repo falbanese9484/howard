@@ -173,7 +173,8 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 		}
 
 		for _, call := range calls {
-			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s - %s]\n", call.Function.Name, call.Function.Arguments), Kind: types.ResponseKindToolStatus}
+			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s - %s]\n",
+				call.Function.Name, call.Function.Arguments), Kind: types.ResponseKindToolStatus}
 			result, err := executeToolCall(call)
 			if err != nil {
 				result = "tool error: " + err.Error()
@@ -190,7 +191,10 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 	conn.ErrorChan <- fmt.Errorf("maximum tool call rounds exceeded")
 }
 
-func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMessage, tools []config.ToolConfig) (openRouterMessage, []types.ToolCall, error) {
+func (o *OpenRouter) sendChat(conn *types.BusConnector,
+	messages []openRouterMessage,
+	tools []config.ToolConfig,
+) (openRouterMessage, []types.ToolCall, error) {
 	reqBody := openRouterRequest{
 		Model:    o.model,
 		Messages: messages,
@@ -203,7 +207,8 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMes
 		return openRouterMessage{}, nil, err
 	}
 
-	req, err := http.NewRequestWithContext(conn.Ctx, "POST", o.url, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(conn.Ctx, "POST",
+		o.url, bytes.NewReader(data))
 	if err != nil {
 		return openRouterMessage{}, nil, err
 	}
@@ -218,7 +223,8 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMes
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return openRouterMessage{}, nil, fmt.Errorf("OpenRouter returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return openRouterMessage{}, nil, fmt.Errorf("OpenRouter returned status %d: %s",
+			resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -238,7 +244,10 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMes
 			if err != nil {
 				return openRouterMessage{}, nil, err
 			}
-			return openRouterMessage{Role: "assistant", Content: assistant.String(), ToolCalls: toolCalls}, calls, nil
+			return openRouterMessage{
+				Role: "assistant", Content: assistant.String(),
+				ToolCalls: toolCalls,
+			}, calls, nil
 		}
 
 		var chunk openRouterStreamResponse
@@ -276,7 +285,12 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMes
 		}
 
 		if delta.Content != "" || thinkingText != "" {
-			conn.ResponseChan <- &types.ChatResponse{Response: delta.Content, Thinking: thinkingText, Done: false, Kind: types.ResponseKindAssistant, Context: conn.Request.Context}
+			conn.ResponseChan <- &types.ChatResponse{
+				Response: delta.Content,
+				Thinking: thinkingText, Done: false,
+				Kind:    types.ResponseKindAssistant,
+				Context: conn.Request.Context,
+			}
 		}
 	}
 
@@ -288,7 +302,10 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector, messages []openRouterMes
 	if err != nil {
 		return openRouterMessage{}, nil, err
 	}
-	return openRouterMessage{Role: "assistant", Content: assistant.String(), ToolCalls: toolCalls}, calls, nil
+	return openRouterMessage{
+		Role: "assistant", Content: assistant.String(),
+		ToolCalls: toolCalls,
+	}, calls, nil
 }
 
 type openRouterToolCallBuilder struct {
@@ -298,7 +315,9 @@ type openRouterToolCallBuilder struct {
 	arguments strings.Builder
 }
 
-func buildOpenRouterToolCalls(builders map[int]*openRouterToolCallBuilder) ([]openRouterToolCall, []types.ToolCall, error) {
+func buildOpenRouterToolCalls(
+	builders map[int]*openRouterToolCallBuilder,
+) ([]openRouterToolCall, []types.ToolCall, error) {
 	if len(builders) == 0 {
 		return nil, nil, nil
 	}
