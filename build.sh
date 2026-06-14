@@ -8,7 +8,7 @@ echo "Creating Directory: $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 
 echo "Building Binary..."
-go build -o "$INSTALL_DIR/howard" ./cmd/tui/main.go
+go build -o "$INSTALL_DIR/howard" ./cmd/howard/main.go
 
 echo "Making Binary Executable..."
 chmod +x "$INSTALL_DIR/howard"

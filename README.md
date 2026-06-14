@@ -35,9 +35,18 @@ config_example.json # example config (copy to ~/.config/howard/config.json)
 ```bash
 mkdir -p ~/.config/howard
 cp config_example.json ~/.config/howard/config.json
-go run ./cmd/tui
+go run ./cmd/howard
 ```
 Configuration is read from `~/.config/howard/config.json`; `config_example.json` in this repo is a template. Edit your copy to set the provider, model, API key if needed, and agent prompt.
+
+CLI commands:
+- `howard` or `howard tui`: launch the interactive TUI
+- `howard run "prompt"`: send one prompt and stream the assistant response to stdout
+- `howard run -model llama3.2 "prompt"`: run one prompt with a temporary model override
+- `howard models`: list models from the configured provider
+- `howard help`: show command usage
+
+During `howard run`, assistant text is written to stdout and tool/status messages are written to stderr.
 
 Keybindings:
 - `Enter` — send prompt
