@@ -266,6 +266,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		go m.bus.Send(req)
 		return m, waitForResponse(m.responses)
 	case tea.KeyCtrlF:
+		if m.isResponding {
+			m.logger.Info("user attempted to switch model while response is in progress, ignoring")
+			return m, nil
+		}
 		m.mode = modeModelSelect
 		models, err := m.provider.RetrieveModels()
 		if err != nil {
