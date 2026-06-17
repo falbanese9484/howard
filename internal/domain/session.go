@@ -12,7 +12,7 @@ type Session struct {
 type Message struct {
 	ID        string
 	SessionID string
-	Role      string // TODO: Use struct Role here
+	Role      string
 	Content   string
 	Thinking  string
 	CreatedAt time.Time

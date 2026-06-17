@@ -17,6 +17,18 @@ type AgentConfig struct {
 	Model        string             `json:"model"`
 	ApiKey       string             `json:"apikey,omitempty"`
 	Tools        []ToolConfig       `json:"tools"`
+	Web          WebConfig          `json:"web"`
+}
+
+// WebConfig controls the web_search and fetch_url tools. When Enabled is
+// false (the default) those tools refuse to run and the agent is told they
+// are unavailable.
+type WebConfig struct {
+	Enabled             bool     `json:"enabled"`
+	SearchBackend       string   `json:"search_backend,omitempty"`
+	DomainAllowlist     []string `json:"domain_allowlist,omitempty"`
+	MaxFetchBytes       int64    `json:"max_fetch_bytes,omitempty"`
+	FetchTimeoutSeconds int      `json:"fetch_timeout_seconds,omitempty"`
 }
 
 type AuthConfig struct {
@@ -212,6 +224,9 @@ func LoadAgentConfig() (*AgentConfig, error) {
 		cfg.ApiKey = credentials.ApiKey
 	}
 	cfg.Tools = mergeTools(builtinTools, cfg.Tools)
+	if !cfg.Web.Enabled {
+		cfg.Tools = filterWebTools(cfg.Tools)
+	}
 	return &cfg, nil
 }
 
@@ -239,6 +254,24 @@ func mergeTools(base, extensions []ToolConfig) []ToolConfig {
 		tools = append(tools, tool)
 	}
 	return tools
+}
+
+// WebToolNames lists the tool names that depend on the web subsystem.
+var WebToolNames = []string{"web_search", "fetch_url"}
+
+func filterWebTools(tools []ToolConfig) []ToolConfig {
+	skip := make(map[string]struct{}, len(WebToolNames))
+	for _, name := range WebToolNames {
+		skip[name] = struct{}{}
+	}
+	out := make([]ToolConfig, 0, len(tools))
+	for _, tool := range tools {
+		if _, drop := skip[tool.Name]; drop {
+			continue
+		}
+		out = append(out, tool)
+	}
+	return out
 }
 
 func BuildSystemPrompt(cfg SystemPromptConfig, tools []ToolConfig) string {

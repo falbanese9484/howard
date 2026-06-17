@@ -42,10 +42,25 @@
           "Use write_file to create new files only; use edit_file for existing files.",
           "Use mkdir to create directories.",
           "Use bash to run shell commands like builds, tests, and formatters; prefer the dedicated file tools for file operations.",
+          "Use web_search to find documentation or error references when local context is not enough; follow up with fetch_url on the most relevant result.",
+          "fetch_url is restricted to an allowlist of domains; if a fetch is denied, suggest the user add the domain to web.domain_allowlist.",
           "Do not access paths outside the project root."
         ]
       }
     ]
   },
-  "tools": []
+  "tools": [],
+  "web": {
+    "enabled": false,
+    "search_backend": "",
+    "domain_allowlist": [
+      "pkg.go.dev",
+      "*.golang.org",
+      "*.github.com",
+      "*.mozilla.org",
+      "stackoverflow.com"
+    ],
+    "max_fetch_bytes": 2097152,
+    "fetch_timeout_seconds": 30
+  }
 }

@@ -71,6 +71,34 @@
           "description": "Directory path to create, relative to the project root."
         }
       ]
+    },
+    {
+      "name": "web_search",
+      "description": "Search the web for documentation, error messages, and references. Returns a markdown list of result titles, URLs, and snippets. Requires web access to be enabled and a search backend configured.",
+      "parameters": [
+        {
+          "param": "query",
+          "description": "The search query."
+        },
+        {
+          "param": "max_results",
+          "description": "Maximum number of results to return (1-10). Optional; defaults to 5."
+        }
+      ]
+    },
+    {
+      "name": "fetch_url",
+      "description": "Fetch a URL over HTTP GET and return its body converted to markdown or plain text. Subject to a domain allowlist; size and timeout limits apply.",
+      "parameters": [
+        {
+          "param": "url",
+          "description": "Absolute http:// or https:// URL to fetch."
+        },
+        {
+          "param": "format",
+          "description": "Output format: 'markdown' (default) or 'text'."
+        }
+      ]
     }
   ]
 }

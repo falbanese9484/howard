@@ -7,6 +7,7 @@ import (
 	"github.com/falbanese9484/agent-harness/internal/logger"
 	"github.com/falbanese9484/agent-harness/internal/provider"
 	"github.com/falbanese9484/agent-harness/internal/types"
+	"github.com/falbanese9484/agent-harness/internal/web"
 	"github.com/falbanese9484/agent-harness/pkg/config"
 )
 
@@ -25,6 +26,8 @@ func NewLogger() (*logger.Logger, error) {
 func NewProvider(cfg *config.AgentConfig, log *logger.Logger) (types.Provider, error) {
 	cache := types.NewModelCache(3600)
 
+	provider.SetWebService(buildWebService(cfg))
+
 	switch cfg.Provider {
 	case "ollama":
 		return provider.NewOllama(log, cfg, cache), nil
@@ -33,6 +36,21 @@ func NewProvider(cfg *config.AgentConfig, log *logger.Logger) (types.Provider, e
 	default:
 		return nil, &UnsupportedProviderError{Provider: cfg.Provider}
 	}
+}
+
+// buildWebService translates config.WebConfig into a runtime web.Service.
+// When web access is disabled the returned service still answers Enabled()
+// as false, which causes the web tools to refuse with a clear error.
+func buildWebService(cfg *config.AgentConfig) *web.Service {
+	wc := cfg.Web
+	svc := web.NewService(web.Config{
+		Enabled:         wc.Enabled,
+		SearchBackend:   wc.SearchBackend,
+		DomainAllowlist: wc.DomainAllowlist,
+		MaxFetchBytes:   wc.MaxFetchBytes,
+		FetchTimeout:    wc.FetchTimeoutSeconds,
+	}, web.NoopSearcher{})
+	return svc
 }
 
 type UnsupportedProviderError struct {

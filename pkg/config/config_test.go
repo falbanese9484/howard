@@ -145,3 +145,72 @@ func TestSaveAndLoadAuthConfig(t *testing.T) {
 		t.Fatalf("openrouter auth key = %q, want test-key", auth.Credentials["openrouter"].ApiKey)
 	}
 }
+
+func TestFilterWebToolsRemovesWhenDisabled(t *testing.T) {
+	tools := []ToolConfig{
+		{Name: "ls"},
+		{Name: "web_search"},
+		{Name: "fetch_url"},
+		{Name: "bash"},
+	}
+	got := filterWebTools(tools)
+	if len(got) != 2 {
+		t.Fatalf("filterWebTools() = %d tools, want 2", len(got))
+	}
+	for _, tool := range got {
+		if tool.Name == "web_search" || tool.Name == "fetch_url" {
+			t.Fatalf("filterWebTools left web tool %q in output", tool.Name)
+		}
+	}
+}
+
+func TestLoadAgentConfigDropsWebToolsWhenDisabled(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfgPath := filepath.Join(home, ".config", "howard", "config.json")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `{"provider":"ollama","model":"llama3.2","system_prompt":{"name":"t"},"tools":[],"web":{"enabled":false}}`
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	loaded, err := LoadAgentConfig()
+	if err != nil {
+		t.Fatalf("LoadAgentConfig() error = %v", err)
+	}
+	for _, tool := range loaded.Tools {
+		if tool.Name == "web_search" || tool.Name == "fetch_url" {
+			t.Fatalf("expected %q to be filtered when web is disabled", tool.Name)
+		}
+	}
+}
+
+func TestLoadAgentConfigKeepsWebToolsWhenEnabled(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfgPath := filepath.Join(home, ".config", "howard", "config.json")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `{"provider":"ollama","model":"llama3.2","system_prompt":{"name":"t"},"tools":[],"web":{"enabled":true}}`
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	loaded, err := LoadAgentConfig()
+	if err != nil {
+		t.Fatalf("LoadAgentConfig() error = %v", err)
+	}
+
+	have := map[string]bool{}
+	for _, tool := range loaded.Tools {
+		have[tool.Name] = true
+	}
+	if !have["web_search"] || !have["fetch_url"] {
+		t.Fatalf("expected web tools to be present when enabled: %v", have)
+	}
+}

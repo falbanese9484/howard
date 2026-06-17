@@ -9,14 +9,37 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/falbanese9484/agent-harness/internal/types"
+	"github.com/falbanese9484/agent-harness/internal/web"
 )
 
 // Sandbox utility functions for Agentic Tooling
 
 const bashTimeout = 60 * time.Second
+
+// webServiceMu guards the package-level web service handle. The service is
+// optional: tools that need it return a clear error when it is unset.
+var (
+	webServiceMu sync.RWMutex
+	webService   *web.Service
+)
+
+// SetWebService installs the active web.Service used by web_search and
+// fetch_url. Pass nil to disable web tooling.
+func SetWebService(s *web.Service) {
+	webServiceMu.Lock()
+	defer webServiceMu.Unlock()
+	webService = s
+}
+
+func currentWebService() *web.Service {
+	webServiceMu.RLock()
+	defer webServiceMu.RUnlock()
+	return webService
+}
 
 func executeToolCall(call types.ToolCall) (string, error) {
 	switch call.Function.Name {
@@ -32,6 +55,10 @@ func executeToolCall(call types.ToolCall) (string, error) {
 		return executeMkdir(call.Function.Arguments)
 	case "bash":
 		return executeBash(call.Function.Arguments)
+	case "web_search":
+		return executeWebSearch(call.Function.Arguments)
+	case "fetch_url":
+		return executeFetchURL(call.Function.Arguments)
 	default:
 		return "", fmt.Errorf("unknown tool: %s", call.Function.Name)
 	}
