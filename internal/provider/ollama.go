@@ -189,7 +189,6 @@ func (o *Ollama) sendChat(
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var assistant strings.Builder
-	var thinking strings.Builder
 	var toolCalls []types.ToolCall
 
 	for scanner.Scan() {
@@ -199,25 +198,22 @@ func (o *Ollama) sendChat(
 		}
 
 		assistant.WriteString(chunk.Message.Content)
-		thinking.WriteString(chunk.Message.Thinking)
 		if len(chunk.Message.ToolCalls) > 0 {
 			toolCalls = append(toolCalls, chunk.Message.ToolCalls...)
 		}
-		if chunk.Message.Content != "" || chunk.Message.Thinking != "" || len(chunk.Message.ToolCalls) > 0 {
+		if chunk.Message.Content != "" || chunk.Message.Thinking != "" {
 			conn.ResponseChan <- &types.ChatResponse{
-				Response:  chunk.Message.Content,
-				Thinking:  chunk.Message.Thinking,
-				ToolCalls: chunk.Message.ToolCalls,
-				Done:      false,
-				Kind:      types.ResponseKindAssistant,
-				Context:   conn.Request.Context,
+				Response: chunk.Message.Content,
+				Thinking: chunk.Message.Thinking,
+				Done:     false,
+				Kind:     types.ResponseKindAssistant,
+				Context:  conn.Request.Context,
 			}
 		}
 		if chunk.Done {
 			return types.Message{
 				Role:      "assistant",
 				Content:   assistant.String(),
-				Thinking:  thinking.String(),
 				ToolCalls: toolCalls,
 			}, nil
 		}
@@ -229,7 +225,6 @@ func (o *Ollama) sendChat(
 	return types.Message{
 		Role:      "assistant",
 		Content:   assistant.String(),
-		Thinking:  thinking.String(),
 		ToolCalls: toolCalls,
 	}, nil
 }
