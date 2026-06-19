@@ -123,6 +123,10 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 
 		messages = append(messages, assistantMsg)
 		if len(assistantMsg.ToolCalls) == 0 {
+			// TODO(review): o.messages is mutated from a goroutine (bus.Send) without
+			// synchronization. Add a mutex or serialize sends through the bus. See notes/review-checklist.md.
+			// TODO(review): conversation history grows unbounded and re-sends full tool
+			// output every turn; add a context budget / truncation. See notes/review-checklist.md.
 			o.messages = messages
 			conn.DoneChannel <- true
 			return
@@ -187,6 +191,9 @@ func (o *Ollama) sendChat(
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
+	// TODO(review): 1 MB scanner cap silently drops lines larger than the buffer
+	// (surfaces as bufio.ErrTooLong). Use bufio.Reader.ReadString('\n') or raise/announce the cap.
+	// See notes/review-checklist.md.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var assistant strings.Builder
 	var toolCalls []types.ToolCall
@@ -194,6 +201,8 @@ func (o *Ollama) sendChat(
 	for scanner.Scan() {
 		var chunk ollamaChatResponse
 		if err := json.Unmarshal(scanner.Bytes(), &chunk); err != nil {
+			// TODO(review): silently skipping malformed chunks loses data; OpenRouter aborts
+			// instead. Pick one policy across providers. See notes/review-checklist.md.
 			continue
 		}
 
@@ -230,6 +239,8 @@ func (o *Ollama) sendChat(
 }
 
 func ollamaTools(tools []config.ToolConfig) []ollamaTool {
+	// TODO(review): all params are hardcoded type "string" and marked required, so
+	// optional params cannot be expressed. Add type/required to ToolParameter. See notes/review-checklist.md.
 	if len(tools) == 0 {
 		return nil
 	}

@@ -205,6 +205,8 @@ func executeBash(args map[string]any) (string, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	// TODO(review): CommandContext SIGKILLs only the direct child; spawned grandchildren
+	// leak on timeout. Use a process group / cmd.Cancel to kill the tree. See notes/review-checklist.md.
 	cmd.Dir = root
 	outputBytes, err := cmd.CombinedOutput()
 	output := string(outputBytes)
@@ -327,6 +329,8 @@ func isProjectPath(root, path string) bool {
 }
 
 func findProjectRoot() (string, error) {
+	// TODO(review): keys on os.Getwd() + go.mod, so file tools are rootless in a
+	// non-Go project. Make the workspace root configurable. See notes/review-checklist.md.
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err

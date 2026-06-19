@@ -144,6 +144,8 @@ func (o *OpenRouter) GenerateRequest(prompt string) *types.ChatRequest {
 }
 
 func (o *OpenRouter) Chat(conn *types.BusConnector) {
+	// TODO(review): this agentic loop is ~90% identical to Ollama.Chat; extract a shared
+	// driver taking a sendChat-like func. Also: openrouter.go has no test coverage. See notes/review-checklist.md.
 	newMessages := openRouterMessages(conn.Request.Messages)
 	if len(newMessages) == 0 && conn.Request.Prompt != "" {
 		newMessages = []openRouterMessage{{Role: "user", Content: conn.Request.Prompt}}
@@ -167,6 +169,10 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 
 		messages = append(messages, assistantMsg)
 		if len(calls) == 0 {
+			// TODO(review): o.messages is mutated from a goroutine (bus.Send) without
+			// synchronization. Add a mutex or serialize sends through the bus. See notes/review-checklist.md.
+			// TODO(review): conversation history grows unbounded and re-sends full tool
+			// output every turn; add a context budget / truncation. See notes/review-checklist.md.
 			o.messages = messages
 			conn.DoneChannel <- true
 			return
@@ -228,6 +234,8 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector,
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
+	// TODO(review): 1 MB scanner cap silently drops lines larger than the buffer;
+	// a large reasoning/tool-call delta can exceed it. See notes/review-checklist.md.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var assistant strings.Builder
 	var thinking strings.Builder
@@ -252,6 +260,8 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector,
 
 		var chunk openRouterStreamResponse
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			// TODO(review): aborting the whole turn on any unparseable data: payload diverges
+			// from Ollama (which skips). Pick one policy across providers. See notes/review-checklist.md.
 			return openRouterMessage{}, nil, err
 		}
 		if len(chunk.Choices) == 0 {

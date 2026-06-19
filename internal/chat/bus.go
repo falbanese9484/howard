@@ -20,6 +20,8 @@ type Bus struct {
 }
 
 func NewBus(log *logger.Logger, provider types.Provider) *Bus {
+	// TODO(review): Content (cap 16) blocks the provider goroutine forever if the
+	// consumer stops draining. See notes/review-checklist.md.
 	return &Bus{
 		Done:     make(chan bool, 1),
 		Content:  make(chan *types.ChatResponse, 16),
@@ -50,6 +52,8 @@ func (b *Bus) Start(out chan *types.ChatResponse) {
 
 func (b *Bus) Send(request *types.ChatRequest) {
 	b.provider.Chat(&types.BusConnector{
+		// TODO(review): Ctx is always context.Background() and never cancelled, so in-flight
+		// requests cannot be aborted. Wire real cancellation (Esc/Ctrl+C, new prompt). See notes/review-checklist.md.
 		Ctx:          context.Background(),
 		Request:      request,
 		ResponseChan: b.Content,

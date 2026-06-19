@@ -310,6 +310,8 @@ func (m *Model) renderThinkingBox() string {
 }
 
 func wrapText(text string, width int) []string {
+	// TODO(review): uses len() (byte length) for width; multi-byte/wide chars wrap
+	// incorrectly. Use lipgloss/x/ansi width helpers. See notes/review-checklist.md.
 	var lines []string
 	for _, raw := range strings.Split(text, "\n") {
 		words := strings.Fields(raw)

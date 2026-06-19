@@ -20,7 +20,9 @@ type ChatRequest struct {
 	Messages []Message           `json:"messages,omitempty"`
 	Tools    []config.ToolConfig `json:"tools,omitempty"`
 	Stream   bool                `json:"stream"`
-	Context  []int               `json:"context,omitempty"`
+	// TODO(review): Context []int is Ollama /api/generate legacy, unused by /api/chat;
+	// vestigial plumbing worth removing. See notes/review-checklist.md.
+	Context []int `json:"context,omitempty"`
 }
 
 type Message struct {

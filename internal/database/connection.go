@@ -10,6 +10,8 @@ import (
 )
 
 func NewDatabase(path string) (*sql.DB, error) {
+	// TODO(review): WIP/dead code — no callers yet, but pulls cgo sqlite into the binary.
+	// Gate behind a branch/build tag or wire session storage in. See notes/review-checklist.md.
 	if path == "" {
 		return nil, errors.New("database path is required")
 	}

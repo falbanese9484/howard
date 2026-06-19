@@ -1,15 +1,16 @@
 ## In Progress
-[] Add Session Storage 
+[ ] Add Session Storage 
     [x] Add Sqlite connection
-    [] Define Domains
-[] Ensure a single Provider session does not process messages concurrently
+    [x] Define Domains
+    [ ] 
+[ ] Ensure a single Provider session does not process messages concurrently
 
 ## Ideas
-[] Under the hood model routing - delegation agents that divvy up different tasks with different models
+[ ] Under the hood model routing - delegation agents that divvy up different tasks with different models
 
 ## Backlog
-[] Add more providers 
-[] Refactor Individual Provider model - assuming they all have similar functionality
+[ ] Add more providers 
+[ ] Refactor Individual Provider model - assuming they all have similar functionality
 
 ## Finished
 [x] Add Web search - Brave Search API
