@@ -172,12 +172,35 @@ func authProvider(args []string, ioStreams IO) error {
 		if err := config.SetProviderAuth("ollama", ""); err != nil {
 			return fmt.Errorf("save auth: %w", err)
 		}
+	case "brave":
+		apiKey := strings.TrimSpace(*key)
+		if apiKey == "" {
+			fmt.Fprint(ioStreams.Stderr, "Brave Search API key: ")
+			password, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(ioStreams.Stderr)
+			if err != nil {
+				return err
+			}
+			apiKey = strings.TrimSpace(string(password))
+		}
+		if apiKey == "" {
+			return errors.New("API key is required")
+		}
+		cfg.Web.Enabled = true
+		cfg.Web.SearchBackend = "brave"
+		if err := config.SetProviderAuth("brave", apiKey); err != nil {
+			return fmt.Errorf("save auth: %w", err)
+		}
 	default:
 		return fmt.Errorf("unsupported provider: %s", providerName)
 	}
 
 	if err := config.SaveAgentConfig(cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
+	}
+	if providerName == "brave" {
+		fmt.Fprintln(ioStreams.Stdout, "Authenticated brave and enabled web search.")
+		return nil
 	}
 	fmt.Fprintf(ioStreams.Stdout, "Authenticated %s and set it as the active provider.\n", providerName)
 	return nil
@@ -215,5 +238,10 @@ Run flags:
 
 Auth flags:
   -key string            API key/token for the provider
+
+Providers:
+  ollama                 Switch to Ollama
+  openrouter             Store OpenRouter credentials and switch provider
+  brave                  Store Brave Search credentials and enable web search
 `)
 }

@@ -214,3 +214,28 @@ func TestLoadAgentConfigKeepsWebToolsWhenEnabled(t *testing.T) {
 		t.Fatalf("expected web tools to be present when enabled: %v", have)
 	}
 }
+
+func TestLoadAgentConfigHydratesWebBackendAuth(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfgPath := filepath.Join(home, ".config", "howard", "config.json")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `{"provider":"ollama","model":"llama3.2","system_prompt":{"name":"t"},"tools":[],"web":{"enabled":true,"search_backend":"brave"}}`
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := SetProviderAuth("brave", "brave-key"); err != nil {
+		t.Fatalf("SetProviderAuth() error = %v", err)
+	}
+
+	loaded, err := LoadAgentConfig()
+	if err != nil {
+		t.Fatalf("LoadAgentConfig() error = %v", err)
+	}
+	if loaded.Web.ApiKey != "brave-key" {
+		t.Fatalf("Web.ApiKey = %q, want brave-key", loaded.Web.ApiKey)
+	}
+}

@@ -52,7 +52,7 @@
   "tools": [],
   "web": {
     "enabled": false,
-    "search_backend": "",
+    "search_backend": "brave",
     "domain_allowlist": [
       "pkg.go.dev",
       "*.golang.org",

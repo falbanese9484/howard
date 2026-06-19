@@ -29,6 +29,7 @@ type WebConfig struct {
 	DomainAllowlist     []string `json:"domain_allowlist,omitempty"`
 	MaxFetchBytes       int64    `json:"max_fetch_bytes,omitempty"`
 	FetchTimeoutSeconds int      `json:"fetch_timeout_seconds,omitempty"`
+	ApiKey              string   `json:"-"`
 }
 
 type AuthConfig struct {
@@ -222,6 +223,11 @@ func LoadAgentConfig() (*AgentConfig, error) {
 	}
 	if credentials, ok := auth.Credentials[cfg.Provider]; ok && credentials.ApiKey != "" {
 		cfg.ApiKey = credentials.ApiKey
+	}
+	if cfg.Web.SearchBackend != "" {
+		if credentials, ok := auth.Credentials[cfg.Web.SearchBackend]; ok && credentials.ApiKey != "" {
+			cfg.Web.ApiKey = credentials.ApiKey
+		}
 	}
 	cfg.Tools = mergeTools(builtinTools, cfg.Tools)
 	if !cfg.Web.Enabled {

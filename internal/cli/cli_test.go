@@ -93,6 +93,58 @@ func TestAuthOllamaSwitchesProviderWithoutConfigKey(t *testing.T) {
 	}
 }
 
+func TestAuthBraveStoresKeyAndEnablesWebSearch(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := config.SaveAgentConfig(&config.AgentConfig{
+		Provider: "ollama",
+		Model:    "llama3.2",
+	}); err != nil {
+		t.Fatalf("SaveAgentConfig() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := Run([]string{"auth", "brave", "-key", "brave-key"}, IO{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	if err != nil {
+		t.Fatalf("Run(auth brave) error = %v", err)
+	}
+
+	cfg, err := config.LoadUserAgentConfig()
+	if err != nil {
+		t.Fatalf("LoadUserAgentConfig() error = %v", err)
+	}
+	if cfg.Provider != "ollama" {
+		t.Fatalf("Provider = %q, want ollama", cfg.Provider)
+	}
+	if !cfg.Web.Enabled {
+		t.Fatal("expected web search to be enabled")
+	}
+	if cfg.Web.SearchBackend != "brave" {
+		t.Fatalf("SearchBackend = %q, want brave", cfg.Web.SearchBackend)
+	}
+
+	auth, err := config.LoadAuthConfig()
+	if err != nil {
+		t.Fatalf("LoadAuthConfig() error = %v", err)
+	}
+	if auth.Credentials["brave"].ApiKey != "brave-key" {
+		t.Fatalf("brave auth key = %q, want brave-key", auth.Credentials["brave"].ApiKey)
+	}
+
+	runtimeCfg, err := config.LoadAgentConfig()
+	if err != nil {
+		t.Fatalf("LoadAgentConfig() error = %v", err)
+	}
+	if runtimeCfg.Web.ApiKey != "brave-key" {
+		t.Fatalf("runtime web api key = %q, want brave-key", runtimeCfg.Web.ApiKey)
+	}
+	if !strings.Contains(stdout.String(), "enabled web search") {
+		t.Fatalf("stdout = %q, want web search confirmation", stdout.String())
+	}
+}
+
 func TestAuthRequiresProvider(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run([]string{"auth"}, IO{Stdout: &stdout, Stderr: &stderr})

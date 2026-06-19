@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/falbanese9484/agent-harness/internal/logger"
 	"github.com/falbanese9484/agent-harness/internal/provider"
@@ -43,13 +44,25 @@ func NewProvider(cfg *config.AgentConfig, log *logger.Logger) (types.Provider, e
 // as false, which causes the web tools to refuse with a clear error.
 func buildWebService(cfg *config.AgentConfig) *web.Service {
 	wc := cfg.Web
+	searcher := web.Searcher(web.NoopSearcher{})
+	switch strings.ToLower(strings.TrimSpace(wc.SearchBackend)) {
+	case "", "noop":
+		searcher = web.NoopSearcher{}
+	case "brave":
+		apiKey := strings.TrimSpace(wc.ApiKey)
+		if apiKey == "" {
+			apiKey = os.Getenv("BRAVE_SEARCH_API_KEY")
+		}
+		searcher = web.NewBraveSearcher(apiKey)
+	}
+
 	svc := web.NewService(web.Config{
 		Enabled:         wc.Enabled,
 		SearchBackend:   wc.SearchBackend,
 		DomainAllowlist: wc.DomainAllowlist,
 		MaxFetchBytes:   wc.MaxFetchBytes,
 		FetchTimeout:    wc.FetchTimeoutSeconds,
-	}, web.NoopSearcher{})
+	}, searcher)
 	return svc
 }
 

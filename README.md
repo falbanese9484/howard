@@ -47,6 +47,8 @@ CLI commands:
 - `howard auth openrouter`: securely store OpenRouter credentials and switch to OpenRouter
 - `howard auth openrouter -key sk-or-...`: non-interactively store OpenRouter credentials
 - `howard auth ollama`: switch to Ollama, which does not require credentials
+- `howard auth brave`: securely store Brave Search credentials and enable web search
+- `howard auth brave -key BSA...`: non-interactively store Brave Search credentials
 - `howard help`: show command usage
 
 During `howard run`, assistant text is written to stdout and tool/status messages are written to stderr.
@@ -63,6 +65,29 @@ Keybindings:
 - `tools`: optional additional tool definitions. Built-in tools are embedded from `pkg/config/tools.json`; entries in user config with the same name override the built-in definition, and new names are appended.
 
 Credentials are stored separately in `~/.config/howard/auth.json` by `howard auth`. Runtime config still comes from `~/.config/howard/config.json`.
+
+## Web Search
+Howard can expose `web_search` and `fetch_url` when web tooling is enabled in config. Brave Search is the supported search backend.
+
+Store your Brave Search API key:
+```bash
+howard auth brave
+```
+
+Or set it in the environment:
+```bash
+export BRAVE_SEARCH_API_KEY="..."
+```
+
+Enable web tools in `~/.config/howard/config.json`:
+```json
+"web": {
+  "enabled": true,
+  "search_backend": "brave"
+}
+```
+
+`howard auth brave` enables this config automatically. `fetch_url` remains restricted by `web.domain_allowlist` and will fail closed for domains that are not allowed.
 
 Logs are written to `./logs/harness.log` by default; set `LOG_FILE_PATH` to change the directory prefix.
 
