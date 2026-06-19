@@ -27,6 +27,28 @@ var (
 	webService   *web.Service
 )
 
+// workspaceRootMu guards the package-level sandbox root used by file tools.
+// When unset, file tools fall back to the current working directory.
+var (
+	workspaceRootMu sync.RWMutex
+	workspaceRoot   string
+)
+
+// SetWorkspaceRoot sets the sandbox root for file tools. The path must be
+// absolute and symlink-resolved by the caller (see app.NewProvider). Passing an
+// empty string resets to current-working-directory behavior.
+func SetWorkspaceRoot(root string) {
+	workspaceRootMu.Lock()
+	defer workspaceRootMu.Unlock()
+	workspaceRoot = root
+}
+
+func currentWorkspaceRoot() string {
+	workspaceRootMu.RLock()
+	defer workspaceRootMu.RUnlock()
+	return workspaceRoot
+}
+
 // SetWebService installs the active web.Service used by web_search and
 // fetch_url. Pass nil to disable web tooling.
 func SetWebService(s *web.Service) {
@@ -329,24 +351,16 @@ func isProjectPath(root, path string) bool {
 }
 
 func findProjectRoot() (string, error) {
-	// TODO(review): keys on os.Getwd() + go.mod, so file tools are rootless in a
-	// non-Go project. Make the workspace root configurable. See notes/review-checklist.md.
+	// The sandbox root defaults to the current working directory so file tools
+	// work in any project, Go or otherwise. Callers can override it via
+	// SetWorkspaceRoot (wired from config/flag in app.NewProvider).
+	if root := currentWorkspaceRoot(); root != "" {
+		return root, nil
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return filepath.EvalSymlinks(dir)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", err
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", os.ErrNotExist
-		}
-		dir = parent
-	}
+	return filepath.EvalSymlinks(dir)
 }

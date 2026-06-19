@@ -51,8 +51,10 @@ has a corresponding `//TODO:` comment at the referenced code location.
 - [ ] **Dead/WIP code on main** — `internal/database`, `internal/domain`, `sandbox/main.go`.
   No callers; pulls cgo sqlite into the binary. Gate or mark clearly.
 
-- [ ] **`findProjectRoot` keys on `os.Getwd()` + `go.mod`** — `tools.go:329`.
-  Running in a non-Go project leaves file tools rootless. Make workspace root configurable.
+- [x] **`findProjectRoot` keys on `os.Getwd()` + `go.mod`** — `tools.go:329`.
+  Resolved: the sandbox root now defaults to `os.Getwd()` (works in any project, Go
+  or not) and is overridable via the `run -root` flag and the `workspace_root` config
+  field, wired through `app.NewProvider` → `provider.SetWorkspaceRoot`.
 
 - [ ] **`wrapText` uses `len()` for width** — `model.go:312`.
   Byte length, not display width; multi-byte/wide chars wrap wrong. Use `lipgloss`/`x/ansi`.

@@ -60,13 +60,57 @@ func TestExecuteWriteFileAllowsNestedProjectPath(t *testing.T) {
 	}
 }
 
+func TestExecuteReadFileWorksWithoutGoMod(t *testing.T) {
+	root := setupToolTestProject(t)
+
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write notes.txt: %v", err)
+	}
+
+	out, err := executeReadFile(map[string]any{"path": "notes.txt"})
+	if err != nil {
+		t.Fatalf("executeReadFile() = %v, want nil", err)
+	}
+	if out != "hello" {
+		t.Fatalf("executeReadFile() = %q, want %q", out, "hello")
+	}
+}
+
+func TestSetWorkspaceRootOverridesCWD(t *testing.T) {
+	// The process CWD is one directory; the configured workspace root is another.
+	setupToolTestProject(t)
+
+	workspace := t.TempDir()
+	resolvedWorkspace, err := filepath.EvalSymlinks(workspace)
+	if err != nil {
+		t.Fatalf("resolve workspace: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(resolvedWorkspace, "in.txt"), []byte("inside"), 0o644); err != nil {
+		t.Fatalf("write in.txt: %v", err)
+	}
+
+	SetWorkspaceRoot(resolvedWorkspace)
+	t.Cleanup(func() { SetWorkspaceRoot("") })
+
+	out, err := executeReadFile(map[string]any{"path": "in.txt"})
+	if err != nil {
+		t.Fatalf("executeReadFile() = %v, want nil", err)
+	}
+	if out != "inside" {
+		t.Fatalf("executeReadFile() = %q, want %q", out, "inside")
+	}
+
+	// A path outside the configured root must still be rejected.
+	outside := t.TempDir()
+	if _, err := executeReadFile(map[string]any{"path": filepath.Join(outside, "x.txt")}); err == nil {
+		t.Fatal("executeReadFile() succeeded for path outside workspace root, want error")
+	}
+}
+
 func setupToolTestProject(t *testing.T) string {
 	t.Helper()
 
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module test\n"), 0o644); err != nil {
-		t.Fatalf("write go.mod: %v", err)
-	}
 
 	oldWD, err := os.Getwd()
 	if err != nil {
@@ -81,5 +125,12 @@ func setupToolTestProject(t *testing.T) string {
 		}
 	})
 
-	return root
+	// Ensure no leaked override from another test affects CWD-based resolution.
+	SetWorkspaceRoot("")
+
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("resolve root: %v", err)
+	}
+	return resolved
 }

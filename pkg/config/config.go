@@ -12,12 +12,13 @@ import (
 var builtinToolsJSON []byte
 
 type AgentConfig struct {
-	Provider     string             `json:"provider"`
-	SystemPrompt SystemPromptConfig `json:"system_prompt"`
-	Model        string             `json:"model"`
-	ApiKey       string             `json:"apikey,omitempty"`
-	Tools        []ToolConfig       `json:"tools"`
-	Web          WebConfig          `json:"web"`
+	Provider      string             `json:"provider"`
+	SystemPrompt  SystemPromptConfig `json:"system_prompt"`
+	Model         string             `json:"model"`
+	ApiKey        string             `json:"apikey,omitempty"`
+	Tools         []ToolConfig       `json:"tools"`
+	Web           WebConfig          `json:"web"`
+	WorkspaceRoot string             `json:"workspace_root,omitempty"`
 }
 
 // WebConfig controls the web_search and fetch_url tools. When Enabled is

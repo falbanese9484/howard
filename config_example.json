@@ -1,6 +1,7 @@
 {
   "provider": "ollama",
   "model": "llama3.2",
+  "workspace_root": "",
   "system_prompt": {
     "name": "Example Agent",
     "sections": [

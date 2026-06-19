@@ -56,6 +56,7 @@ func runPrompt(args []string, ioStreams IO) error {
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	flags.SetOutput(ioStreams.Stderr)
 	model := flags.String("model", "", "override the configured model")
+	root := flags.String("root", "", "workspace root directory for file tools (defaults to the current directory)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -65,7 +66,7 @@ func runPrompt(args []string, ioStreams IO) error {
 		return errors.New("prompt is required")
 	}
 
-	log, prov, err := loadRuntime()
+	log, prov, err := loadRuntime(*root)
 	if err != nil {
 		return err
 	}
@@ -112,7 +113,7 @@ func listModels(args []string, ioStreams IO) error {
 		return fmt.Errorf("unexpected argument: %s", flags.Arg(0))
 	}
 
-	_, prov, err := loadRuntime()
+	_, prov, err := loadRuntime("")
 	if err != nil {
 		return err
 	}
@@ -206,7 +207,7 @@ func authProvider(args []string, ioStreams IO) error {
 	return nil
 }
 
-func loadRuntime() (*logger.Logger, types.Provider, error) {
+func loadRuntime(workspaceOverride string) (*logger.Logger, types.Provider, error) {
 	cfg, err := config.LoadAgentConfig()
 	if err != nil {
 		return nil, nil, fmt.Errorf("load config: %w", err)
@@ -217,7 +218,7 @@ func loadRuntime() (*logger.Logger, types.Provider, error) {
 		return nil, nil, fmt.Errorf("initialize logger: %w", err)
 	}
 
-	prov, err := app.NewProvider(cfg, log)
+	prov, err := app.NewProvider(cfg, log, workspaceOverride)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -235,6 +236,7 @@ func printUsage(w io.Writer) {
 
 Run flags:
   -model string          Override the configured model
+  -root string           Workspace root directory for file tools (defaults to the current directory)
 
 Auth flags:
   -key string            API key/token for the provider

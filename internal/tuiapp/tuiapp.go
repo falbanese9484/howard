@@ -33,7 +33,7 @@ func initModel(cfg *config.AgentConfig) tea.Model {
 		panic(err)
 	}
 
-	prov, err := app.NewProvider(cfg, log)
+	prov, err := app.NewProvider(cfg, log, "")
 	if err != nil {
 		log.Fatal("Failed to initialize provider: ", err)
 	}

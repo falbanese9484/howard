@@ -7,7 +7,7 @@ Howard is a focused coding agent harness built in Go. It runs a terminal UI (TUI
 
 ## Features
 - Terminal UI built with Bubble Tea + Lip Gloss, markdown rendering via Glamour
-- Tool-using agent (ls, read_file, edit_file, write_file, mkdir, bash); file tools are sandboxed to the project root, while bash runs with your full user permissions
+- Tool-using agent (ls, read_file, edit_file, write_file, mkdir, bash); file tools are sandboxed to the workspace root (the current directory by default, overridable via `workspace_root` config or `run -root`), while bash runs with your full user permissions
 - Pluggable providers: Ollama (local) and OpenRouter
 - Runtime model switching (Ctrl+F opens a model selector)
 - System prompt driven by JSON config, with built-in tools embedded from `pkg/config/tools.json`
@@ -43,6 +43,7 @@ CLI commands:
 - `howard` or `howard tui`: launch the interactive TUI
 - `howard run "prompt"`: send one prompt and stream the assistant response to stdout
 - `howard run -model llama3.2 "prompt"`: run one prompt with a temporary model override
+- `howard run -root /path/to/project "prompt"`: run one prompt with a temporary workspace root override
 - `howard models`: list models from the configured provider
 - `howard auth openrouter`: securely store OpenRouter credentials and switch to OpenRouter
 - `howard auth openrouter -key sk-or-...`: non-interactively store OpenRouter credentials
@@ -61,6 +62,7 @@ Keybindings:
 ## Configuration
 - `provider`: `ollama` or `openrouter`
 - `model`: model name to use, such as an Ollama tag or OpenRouter model ID
+- `workspace_root`: optional sandbox root for file tools. Defaults to the current working directory; `~` is expanded. The `run -root` flag overrides this per invocation.
 - `system_prompt`: agent identity and operating principles split into titled sections
 - `tools`: optional additional tool definitions. Built-in tools are embedded from `pkg/config/tools.json`; entries in user config with the same name override the built-in definition, and new names are appended.
 

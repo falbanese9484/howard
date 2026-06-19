@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,8 +25,14 @@ func NewLogger() (*logger.Logger, error) {
 	})
 }
 
-func NewProvider(cfg *config.AgentConfig, log *logger.Logger) (types.Provider, error) {
+func NewProvider(cfg *config.AgentConfig, log *logger.Logger, workspaceOverride string) (types.Provider, error) {
 	cache := types.NewModelCache(3600)
+
+	root, err := resolveWorkspaceRoot(cfg, workspaceOverride)
+	if err != nil {
+		return nil, err
+	}
+	provider.SetWorkspaceRoot(root)
 
 	provider.SetWebService(buildWebService(cfg))
 
@@ -37,6 +44,50 @@ func NewProvider(cfg *config.AgentConfig, log *logger.Logger) (types.Provider, e
 	default:
 		return nil, &UnsupportedProviderError{Provider: cfg.Provider}
 	}
+}
+
+// resolveWorkspaceRoot determines the sandbox root for file tools. Precedence:
+// the CLI override, then config.WorkspaceRoot, then the current working
+// directory. The chosen path is expanded, made absolute, verified to be a
+// directory, and symlink-resolved so the provider's containment checks remain
+// valid.
+func resolveWorkspaceRoot(cfg *config.AgentConfig, override string) (string, error) {
+	candidate := strings.TrimSpace(override)
+	if candidate == "" && cfg != nil {
+		candidate = strings.TrimSpace(cfg.WorkspaceRoot)
+	}
+	if candidate == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("determine working directory: %w", err)
+		}
+		candidate = cwd
+	} else if strings.HasPrefix(candidate, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("expand home directory: %w", err)
+		}
+		candidate = filepath.Join(home, strings.TrimPrefix(candidate, "~"))
+	}
+
+	abs, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace root %q: %w", candidate, err)
+	}
+
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("workspace root %q: %w", abs, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workspace root is not a directory: %s", abs)
+	}
+
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace root symlinks %q: %w", abs, err)
+	}
+	return resolved, nil
 }
 
 // buildWebService translates config.WebConfig into a runtime web.Service.
