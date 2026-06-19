@@ -12,6 +12,7 @@
 [] Refactor Individual Provider model - assuming they all have similar functionality
 
 ## Finished
+[x] Add Web search - Brave Search API
 [x] Start creating the cli entry point
 [x] Bring Tool section of the system prompt internal - enable extension points for custom tooling and the apps self modification
 [x] Create an Auth flow for adding API keys for different providers
