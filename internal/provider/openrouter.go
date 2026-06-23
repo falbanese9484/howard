@@ -41,13 +41,14 @@ var openRouterStreamClient = &http.Client{
 }
 
 type OpenRouter struct {
-	url        string
-	apiKey     string
-	model      string
-	messages   []openRouterMessage
-	tools      []config.ToolConfig
-	modelCache *types.ModelCache
-	logger     *logger.Logger
+	url             string
+	apiKey          string
+	model           string
+	messages        []openRouterMessage
+	initialMessages []openRouterMessage
+	tools           []config.ToolConfig
+	modelCache      *types.ModelCache
+	logger          *logger.Logger
 }
 
 type openRouterMessage struct {
@@ -124,13 +125,14 @@ func NewOpenRouter(
 	}
 
 	return &OpenRouter{
-		url:        openRouterChatURL,
-		apiKey:     cfg.ApiKey,
-		model:      cfg.Model,
-		messages:   messages,
-		tools:      tools,
-		modelCache: cache,
-		logger:     log,
+		url:             openRouterChatURL,
+		apiKey:          cfg.ApiKey,
+		model:           cfg.Model,
+		messages:        messages,
+		initialMessages: append([]openRouterMessage{}, messages...),
+		tools:           tools,
+		modelCache:      cache,
+		logger:          log,
 	}, nil
 }
 
@@ -451,4 +453,10 @@ func (o *OpenRouter) RetrieveModels() ([]types.Model, error) {
 
 func (o *OpenRouter) SetModel(model string) {
 	o.model = model
+}
+
+// Reset discards the conversation history and restores the initial
+// system-prompt-only message list.
+func (o *OpenRouter) Reset() {
+	o.messages = append([]openRouterMessage{}, o.initialMessages...)
 }

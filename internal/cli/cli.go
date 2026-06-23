@@ -13,6 +13,7 @@ import (
 	"github.com/falbanese9484/agent-harness/internal/logger"
 	"github.com/falbanese9484/agent-harness/internal/tuiapp"
 	"github.com/falbanese9484/agent-harness/internal/types"
+	"github.com/falbanese9484/agent-harness/internal/webui"
 	"github.com/falbanese9484/agent-harness/pkg/config"
 	"golang.org/x/term"
 )
@@ -39,6 +40,8 @@ func Run(args []string, ioStreams IO) error {
 		return tuiapp.Run()
 	case "run":
 		return runPrompt(args[1:], ioStreams)
+	case "web":
+		return runWeb(args[1:], ioStreams)
 	case "models":
 		return listModels(args[1:], ioStreams)
 	case "auth":
@@ -101,6 +104,44 @@ func runPrompt(args []string, ioStreams IO) error {
 	}
 
 	return errors.New("response channel closed")
+}
+
+func runWeb(args []string, ioStreams IO) error {
+	flags := flag.NewFlagSet("web", flag.ContinueOnError)
+	flags.SetOutput(ioStreams.Stderr)
+	port := flags.Int("port", 8080, "port to listen on (bound to 127.0.0.1)")
+	root := flags.String("root", "", "workspace root directory for file tools (defaults to the current directory)")
+	model := flags.String("model", "", "override the configured model")
+	noOpen := flags.Bool("no-open", false, "do not open the browser automatically")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() > 0 {
+		return fmt.Errorf("unexpected argument: %s", flags.Arg(0))
+	}
+
+	cfg, err := config.LoadAgentConfig()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	log, err := app.NewLogger()
+	if err != nil {
+		return fmt.Errorf("initialize logger: %w", err)
+	}
+	prov, err := app.NewProvider(cfg, log, *root)
+	if err != nil {
+		return err
+	}
+
+	modelName := cfg.Model
+	if *model != "" {
+		prov.SetModel(*model)
+		modelName = *model
+	}
+
+	srv := webui.New(log, prov, modelName)
+	addr := fmt.Sprintf("127.0.0.1:%d", *port)
+	return srv.Serve(addr, !*noOpen, ioStreams.Stdout)
 }
 
 func listModels(args []string, ioStreams IO) error {
@@ -230,6 +271,7 @@ func printUsage(w io.Writer) {
   howard                 Launch the TUI
   howard tui             Launch the TUI
   howard run [flags] PROMPT
+  howard web [flags]
   howard models
   howard auth PROVIDER [flags]
   howard help
@@ -237,6 +279,12 @@ func printUsage(w io.Writer) {
 Run flags:
   -model string          Override the configured model
   -root string           Workspace root directory for file tools (defaults to the current directory)
+
+Web flags:
+  -port int              Port to listen on, bound to 127.0.0.1 (default 8080)
+  -model string          Override the configured model
+  -root string           Workspace root directory for file tools (defaults to the current directory)
+  -no-open               Do not open the browser automatically
 
 Auth flags:
   -key string            API key/token for the provider

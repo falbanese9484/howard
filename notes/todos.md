@@ -11,6 +11,7 @@
 ## Backlog
 [ ] Add more providers 
 [ ] Refactor Individual Provider model - assuming they all have similar functionality
+[ ] Add alternative System prompts depending on chose interface
 
 ## Finished
 [x] Add Web search - Brave Search API

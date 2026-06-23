@@ -7,6 +7,7 @@ Howard is a focused coding agent harness built in Go. It runs a terminal UI (TUI
 
 ## Features
 - Terminal UI built with Bubble Tea + Lip Gloss, markdown rendering via Glamour
+- Local web UI (`howard web`) with SSE streaming, embedded assets, and no build step
 - Tool-using agent (ls, read_file, edit_file, write_file, mkdir, bash); file tools are sandboxed to the workspace root (the current directory by default, overridable via `workspace_root` config or `run -root`), while bash runs with your full user permissions
 - Pluggable providers: Ollama (local) and OpenRouter
 - Runtime model switching (Ctrl+F opens a model selector)
@@ -20,6 +21,7 @@ internal/
   chat/          # message bus between provider and TUI
   provider/      # ollama, openrouter, tool execution
   tui/           # bubbletea model, components, styles
+  webui/         # local web UI server + embedded static assets
   types/         # shared types
   logger/        # logging
 pkg/config/         # agent config loading + system prompt builder
@@ -44,6 +46,10 @@ CLI commands:
 - `howard run "prompt"`: send one prompt and stream the assistant response to stdout
 - `howard run -model llama3.2 "prompt"`: run one prompt with a temporary model override
 - `howard run -root /path/to/project "prompt"`: run one prompt with a temporary workspace root override
+- `howard web`: launch the local web UI and open it in your browser
+- `howard web -port 9000`: launch the web UI on a specific port (bound to `127.0.0.1`)
+- `howard web -no-open`: launch the web UI without auto-opening the browser
+- `howard web -model llama3.2 -root /path/to/project`: web UI with temporary model/workspace overrides
 - `howard models`: list models from the configured provider
 - `howard auth openrouter`: securely store OpenRouter credentials and switch to OpenRouter
 - `howard auth openrouter -key sk-or-...`: non-interactively store OpenRouter credentials
@@ -58,6 +64,21 @@ Keybindings:
 - `Enter` — send prompt
 - `Ctrl+F` — open model selector
 - `Esc` / `Ctrl+C` — close selector, or quit
+
+## Web UI
+`howard web` serves a single-page chat UI from the same agent backend as the TUI and `run`. It streams responses over Server-Sent Events and ships as static assets embedded in the binary (no build step, works offline).
+
+```bash
+howard web                       # serve on 127.0.0.1:8080 and open the browser
+howard web -port 9000            # choose a port
+howard web -no-open              # don't auto-open the browser
+howard web -model llama3.2       # temporary model override for this session
+howard web -root /path/to/proj   # temporary workspace root for file tools
+```
+
+Features: live streaming with markdown rendering, a collapsible reasoning ("thinking") panel, tool-activity indicators, a model switcher, a stop button to cancel an in-flight turn, and a "new chat" button to reset the conversation.
+
+Security: the server binds to `127.0.0.1` only and must never be exposed to a network — the agent can run shell commands and edit files with your full user permissions. Mutating endpoints require an `application/json` content type as a baseline CSRF defense. The web UI is single-user; one conversation is shared by the process and turns are serialized.
 
 ## Configuration
 - `provider`: `ollama` or `openrouter`
