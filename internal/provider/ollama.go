@@ -20,12 +20,13 @@ const (
 )
 
 type Ollama struct {
-	url        string
-	model      string
-	messages   []types.Message
-	tools      []config.ToolConfig
-	modelCache *types.ModelCache
-	logger     *logger.Logger
+	url             string
+	model           string
+	messages        []types.Message
+	initialMessages []types.Message
+	tools           []config.ToolConfig
+	modelCache      *types.ModelCache
+	logger          *logger.Logger
 }
 
 type ollamaChatRequest struct {
@@ -78,12 +79,13 @@ func NewOllama(log *logger.Logger,
 	}
 
 	return &Ollama{
-		url:        ollamaChatURL,
-		model:      cfg.Model,
-		messages:   messages,
-		tools:      tools,
-		modelCache: cache,
-		logger:     log,
+		url:             ollamaChatURL,
+		model:           cfg.Model,
+		messages:        messages,
+		initialMessages: append([]types.Message{}, messages...),
+		tools:           tools,
+		modelCache:      cache,
+		logger:          log,
 	}
 }
 
@@ -309,4 +311,10 @@ func (o *Ollama) RetrieveModels() ([]types.Model, error) {
 
 func (o *Ollama) SetModel(model string) {
 	o.model = model
+}
+
+// Reset discards the conversation history and restores the initial
+// system-prompt-only message list.
+func (o *Ollama) Reset() {
+	o.messages = append([]types.Message{}, o.initialMessages...)
 }

@@ -11,6 +11,8 @@
 ## Backlog
 [ ] Add more providers 
 [ ] Refactor Individual Provider model - assuming they all have similar functionality
+[ ] Add alternative System prompts depending on chose interface
+[ ] Fix model retrieving and setting logic for Bedrock, right now it misses the us. eu. etc.. prefic causing model load to fail
 
 ## Finished
 [x] Add Web search - Brave Search API

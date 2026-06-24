@@ -18,7 +18,22 @@ type AgentConfig struct {
 	ApiKey        string             `json:"apikey,omitempty"`
 	Tools         []ToolConfig       `json:"tools"`
 	Web           WebConfig          `json:"web"`
+	Bedrock       *BedrockConfig     `json:"bedrock,omitempty"`
 	WorkspaceRoot string             `json:"workspace_root,omitempty"`
+}
+
+// BedrockConfig holds settings specific to the AWS Bedrock provider. The
+// Bedrock API key (a long-term bearer token) is not stored here; like other
+// providers it lives in auth.json and is injected into AgentConfig.ApiKey at
+// load time.
+type BedrockConfig struct {
+	// Region selects the regional Bedrock endpoint
+	// (bedrock-runtime.<region>.amazonaws.com). When empty, the provider falls
+	// back to AWS_REGION / AWS_DEFAULT_REGION and then a built-in default.
+	Region string `json:"region,omitempty"`
+	// MaxTokens caps the model's output tokens per response. When zero, the
+	// provider applies a sensible default.
+	MaxTokens int `json:"max_tokens,omitempty"`
 }
 
 // WebConfig controls the web_search and fetch_url tools. When Enabled is

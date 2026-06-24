@@ -32,6 +32,8 @@ func (fakeProvider) RetrieveModels() ([]types.Model, error) {
 
 func (fakeProvider) SetModel(model string) {}
 
+func (fakeProvider) Reset() {}
+
 func TestBusLogsTimeToFirstTokenForThinkingChunk(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "harness.log")
 	log, err := logger.New(logger.Config{FilePath: logPath, FileOnly: true})
@@ -132,6 +134,8 @@ func (toolThenAssistantProvider) RetrieveModels() ([]types.Model, error) {
 }
 
 func (toolThenAssistantProvider) SetModel(model string) {}
+
+func (toolThenAssistantProvider) Reset() {}
 
 var (
 	_ types.Provider = fakeProvider{}

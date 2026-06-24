@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>howard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">howard</span>
+      <span class="tagline">a minimal local AI agent</span>
+    </div>
+    <div class="controls">
+      <label class="model-picker">
+        <span class="model-label">model</span>
+        <select id="model-select" title="Switch model"></select>
+      </label>
+      <button id="new-chat" class="btn" title="Start a new conversation">New chat</button>
+    </div>
+  </header>
+
+  <main id="chat-log" class="chat-log" aria-live="polite"></main>
+
+  <section id="thinking-panel" class="thinking-panel hidden">
+    <button id="thinking-toggle" class="thinking-toggle" aria-expanded="true">
+      <span class="thinking-caret">▾</span> Thinking
+    </button>
+    <pre id="thinking-content" class="thinking-content"></pre>
+  </section>
+
+  <footer class="composer">
+    <textarea
+      id="prompt"
+      class="prompt"
+      rows="2"
+      placeholder="Send a message…  (Enter to send, Shift+Enter for newline)"
+      autofocus></textarea>
+    <div class="composer-buttons">
+      <button id="send" class="btn btn-primary">Send</button>
+      <button id="stop" class="btn btn-danger hidden">Stop</button>
+    </div>
+  </footer>
+
+  <script src="/static/markdown.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

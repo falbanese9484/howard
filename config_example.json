@@ -63,5 +63,9 @@
     ],
     "max_fetch_bytes": 2097152,
     "fetch_timeout_seconds": 30
+  },
+  "bedrock": {
+    "region": "us-east-1",
+    "max_tokens": 4096
   }
 }
