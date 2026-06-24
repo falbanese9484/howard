@@ -145,6 +145,52 @@ func TestAuthBraveStoresKeyAndEnablesWebSearch(t *testing.T) {
 	}
 }
 
+func TestAuthBedrockStoresKeyRegionAndSwitchesProvider(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := Run([]string{"auth", "bedrock", "-key", "bedrock-token", "-region", "us-west-2"}, IO{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	if err != nil {
+		t.Fatalf("Run(auth bedrock) error = %v", err)
+	}
+
+	cfg, err := config.LoadUserAgentConfig()
+	if err != nil {
+		t.Fatalf("LoadUserAgentConfig() error = %v", err)
+	}
+	if cfg.Provider != "bedrock" {
+		t.Fatalf("Provider = %q, want bedrock", cfg.Provider)
+	}
+	if cfg.ApiKey != "" {
+		t.Fatalf("config ApiKey = %q, want empty (stored in auth.json)", cfg.ApiKey)
+	}
+	if cfg.Bedrock == nil || cfg.Bedrock.Region != "us-west-2" {
+		t.Fatalf("config Bedrock = %#v, want region us-west-2", cfg.Bedrock)
+	}
+
+	auth, err := config.LoadAuthConfig()
+	if err != nil {
+		t.Fatalf("LoadAuthConfig() error = %v", err)
+	}
+	if auth.Credentials["bedrock"].ApiKey != "bedrock-token" {
+		t.Fatalf("bedrock auth key = %q, want bedrock-token", auth.Credentials["bedrock"].ApiKey)
+	}
+
+	runtimeCfg, err := config.LoadAgentConfig()
+	if err != nil {
+		t.Fatalf("LoadAgentConfig() error = %v", err)
+	}
+	if runtimeCfg.ApiKey != "bedrock-token" {
+		t.Fatalf("runtime ApiKey = %q, want bedrock-token", runtimeCfg.ApiKey)
+	}
+	if !strings.Contains(stdout.String(), "Authenticated bedrock") {
+		t.Fatalf("stdout = %q, want auth confirmation", stdout.String())
+	}
+}
+
 func TestAuthRequiresProvider(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run([]string{"auth"}, IO{Stdout: &stdout, Stderr: &stderr})

@@ -47,7 +47,9 @@
 
   function ensureAssistantBubble() {
     if (!assistantBubble) {
-      assistantBubble = addMessage("ai", currentModel || "howard", { html: "" });
+      assistantBubble = addMessage("ai", currentModel || "howard", {
+        html: "",
+      });
       assistantBubble.classList.add("cursor");
     }
   }
@@ -141,7 +143,9 @@
 
       if (!resp.ok || !resp.body) {
         const errText = await safeText(resp);
-        addMessage("error", "error", { text: errText || "HTTP " + resp.status });
+        addMessage("error", "error", {
+          text: errText || "HTTP " + resp.status,
+        });
         return;
       }
 
@@ -207,7 +211,9 @@
   });
 
   stopBtn.addEventListener("click", function () {
-    fetch("/api/cancel", { method: "POST", headers: JSON_HEADERS }).catch(function () {});
+    fetch("/api/cancel", { method: "POST", headers: JSON_HEADERS }).catch(
+      function () {},
+    );
   });
 
   newChatBtn.addEventListener("click", async function () {

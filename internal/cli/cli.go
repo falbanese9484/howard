@@ -178,6 +178,7 @@ func authProvider(args []string, ioStreams IO) error {
 	flags := flag.NewFlagSet("auth", flag.ContinueOnError)
 	flags.SetOutput(ioStreams.Stderr)
 	key := flags.String("key", "", "API key/token for the provider")
+	region := flags.String("region", "", "AWS region for Bedrock (bedrock provider only)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -212,6 +213,30 @@ func authProvider(args []string, ioStreams IO) error {
 	case "ollama":
 		cfg.Provider = "ollama"
 		if err := config.SetProviderAuth("ollama", ""); err != nil {
+			return fmt.Errorf("save auth: %w", err)
+		}
+	case "bedrock":
+		apiKey := strings.TrimSpace(*key)
+		if apiKey == "" {
+			fmt.Fprint(ioStreams.Stderr, "Bedrock API key: ")
+			password, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(ioStreams.Stderr)
+			if err != nil {
+				return err
+			}
+			apiKey = strings.TrimSpace(string(password))
+		}
+		if apiKey == "" {
+			return errors.New("API key is required")
+		}
+		cfg.Provider = "bedrock"
+		if r := strings.TrimSpace(*region); r != "" {
+			if cfg.Bedrock == nil {
+				cfg.Bedrock = &config.BedrockConfig{}
+			}
+			cfg.Bedrock.Region = r
+		}
+		if err := config.SetProviderAuth("bedrock", apiKey); err != nil {
 			return fmt.Errorf("save auth: %w", err)
 		}
 	case "brave":
@@ -288,10 +313,12 @@ Web flags:
 
 Auth flags:
   -key string            API key/token for the provider
+  -region string         AWS region for Bedrock (bedrock provider only)
 
 Providers:
   ollama                 Switch to Ollama
   openrouter             Store OpenRouter credentials and switch provider
+  bedrock                Store an AWS Bedrock API key and switch provider
   brave                  Store Brave Search credentials and enable web search
 `)
 }

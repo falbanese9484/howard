@@ -41,6 +41,8 @@ func NewProvider(cfg *config.AgentConfig, log *logger.Logger, workspaceOverride 
 		return provider.NewOllama(log, cfg, cache), nil
 	case "openrouter":
 		return provider.NewOpenRouter(log, cfg, cache)
+	case "bedrock":
+		return provider.NewBedrock(log, cfg, cache)
 	default:
 		return nil, &UnsupportedProviderError{Provider: cfg.Provider}
 	}

@@ -9,7 +9,7 @@ Howard is a focused coding agent harness built in Go. It runs a terminal UI (TUI
 - Terminal UI built with Bubble Tea + Lip Gloss, markdown rendering via Glamour
 - Local web UI (`howard web`) with SSE streaming, embedded assets, and no build step
 - Tool-using agent (ls, read_file, edit_file, write_file, mkdir, bash); file tools are sandboxed to the workspace root (the current directory by default, overridable via `workspace_root` config or `run -root`), while bash runs with your full user permissions
-- Pluggable providers: Ollama (local) and OpenRouter
+- Pluggable providers: Ollama (local), OpenRouter, and AWS Bedrock
 - Runtime model switching (Ctrl+F opens a model selector)
 - System prompt driven by JSON config, with built-in tools embedded from `pkg/config/tools.json`
 - Small, targeted edits by design: edit_file requires an exact, unique text match
@@ -19,7 +19,7 @@ Howard is a focused coding agent harness built in Go. It runs a terminal UI (TUI
 cmd/tui/         # TUI entrypoint
 internal/
   chat/          # message bus between provider and TUI
-  provider/      # ollama, openrouter, tool execution
+  provider/      # ollama, openrouter, bedrock, tool execution
   tui/           # bubbletea model, components, styles
   webui/         # local web UI server + embedded static assets
   types/         # shared types
@@ -31,7 +31,8 @@ config_example.json # example config (copy to ~/.config/howard/config.json)
 ## Requirements
 - Go 1.24+
 - For Ollama: local Ollama running at `localhost:11434` with a chosen model
-- For OpenRouter: an API key set via `apikey` in the config file
+- For OpenRouter: an API key set via `howard auth openrouter`
+- For AWS Bedrock: a long-term Bedrock API key (`howard auth bedrock`) and a region
 
 ## Usage
 ```bash
@@ -54,6 +55,8 @@ CLI commands:
 - `howard auth openrouter`: securely store OpenRouter credentials and switch to OpenRouter
 - `howard auth openrouter -key sk-or-...`: non-interactively store OpenRouter credentials
 - `howard auth ollama`: switch to Ollama, which does not require credentials
+- `howard auth bedrock`: securely store an AWS Bedrock API key and switch to Bedrock
+- `howard auth bedrock -key BEDROCK... -region us-east-1`: non-interactively store the Bedrock key and region
 - `howard auth brave`: securely store Brave Search credentials and enable web search
 - `howard auth brave -key BSA...`: non-interactively store Brave Search credentials
 - `howard help`: show command usage
@@ -81,13 +84,40 @@ Features: live streaming with markdown rendering, a collapsible reasoning ("thin
 Security: the server binds to `127.0.0.1` only and must never be exposed to a network — the agent can run shell commands and edit files with your full user permissions. Mutating endpoints require an `application/json` content type as a baseline CSRF defense. The web UI is single-user; one conversation is shared by the process and turns are serialized.
 
 ## Configuration
-- `provider`: `ollama` or `openrouter`
-- `model`: model name to use, such as an Ollama tag or OpenRouter model ID
+- `provider`: `ollama`, `openrouter`, or `bedrock`
+- `model`: model name to use, such as an Ollama tag, an OpenRouter model ID, or a Bedrock model/inference-profile ID (for example `us.anthropic.claude-3-5-sonnet-20240620-v1:0`)
 - `workspace_root`: optional sandbox root for file tools. Defaults to the current working directory; `~` is expanded. The `run -root` flag overrides this per invocation.
 - `system_prompt`: agent identity and operating principles split into titled sections
 - `tools`: optional additional tool definitions. Built-in tools are embedded from `pkg/config/tools.json`; entries in user config with the same name override the built-in definition, and new names are appended.
+- `bedrock`: optional Bedrock settings. `bedrock.region` selects the regional endpoint (falls back to `AWS_REGION`/`AWS_DEFAULT_REGION`, then `us-east-1`); `bedrock.max_tokens` caps output tokens per response (defaults to 4096).
 
 Credentials are stored separately in `~/.config/howard/auth.json` by `howard auth`. Runtime config still comes from `~/.config/howard/config.json`.
+
+## AWS Bedrock
+Howard talks to Amazon Bedrock through the public [Converse](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html) / `ConverseStream` APIs and authenticates with a long-term [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) (a bearer token) — no AWS SDK dependency and no SigV4 signing.
+
+Store your Bedrock API key and select a region:
+```bash
+howard auth bedrock -region us-east-1
+```
+
+Or set the key in the environment (the same variable the AWS SDKs use):
+```bash
+export AWS_BEARER_TOKEN_BEDROCK="..."
+export AWS_REGION="us-east-1"
+```
+
+Set the model in `~/.config/howard/config.json` to a Bedrock model or inference-profile ID, and optionally pin a region:
+```json
+"provider": "bedrock",
+"model": "us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+"bedrock": {
+  "region": "us-east-1",
+  "max_tokens": 4096
+}
+```
+
+The credential resolves from `auth.json` first, then `AWS_BEARER_TOKEN_BEDROCK`. The region resolves from `bedrock.region`, then `AWS_REGION`/`AWS_DEFAULT_REGION`, then defaults to `us-east-1`. `howard models` lists foundation models via the Bedrock control plane when the key permits it, otherwise it falls back to the configured model.
 
 ## Web Search
 Howard can expose `web_search` and `fetch_url` when web tooling is enabled in config. Brave Search is the supported search backend.
