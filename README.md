@@ -100,5 +100,24 @@ go build ./...
 ```
 Follow the agent principles when contributing: read before editing, make small exact replacements, preserve style, run formatting/tests afterward.
 
+### Worker state ownership
+`app.NewProvider` constructs a separate execution state and conversation for each
+provider. File tools and bash use that execution's resolved workspace; web tools
+use its own service and copied web settings. Tool definitions are copied at
+construction and when generating requests. Workspace selection precedence remains
+`run -root`, then `workspace_root`, then the working directory at construction.
+
+A provider owns one in-memory conversation. Overlapping `Chat` calls on that
+provider are rejected with `provider.ErrConversationBusy`; independent workers
+must use independently constructed providers. Model changes are synchronized and
+take effect on the next turn, without changing an active tool round-trip. Callers
+must not mutate requests while a turn is using them.
+
+This is in-process state isolation. Bash still has the user's full permissions,
+and path/symlink checks do not protect against concurrent filesystem replacement.
+Separate worker objects do not isolate processes or two workers deliberately
+configured to use the same files. Lifecycle execution, cancellation, restricted
+tool policy, and durable sessions are subsequent slices.
+
 ## License
 MIT

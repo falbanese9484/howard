@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/falbanese9484/agent-harness/internal/provider"
 	"github.com/falbanese9484/agent-harness/pkg/config"
 )
 
@@ -64,6 +65,37 @@ func TestResolveWorkspaceRootErrors(t *testing.T) {
 			t.Fatal("resolveWorkspaceRoot() = nil error for file path, want error")
 		}
 	})
+}
+
+func TestNewProviderConstructsIndependentProviders(t *testing.T) {
+	for _, kind := range []string{"ollama", "openrouter"} {
+		t.Run(kind, func(t *testing.T) {
+			cfg := &config.AgentConfig{Provider: kind, Model: "initial", ApiKey: "synthetic", WorkspaceRoot: t.TempDir()}
+			a, err := NewProvider(cfg, nil, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, err := NewProvider(cfg, nil, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.Model = "changed config"
+			a.SetModel("changed A")
+			if a.GenerateRequest("test").Model != "changed A" || b.GenerateRequest("test").Model != "initial" {
+				t.Fatal("providers share model configuration")
+			}
+			switch kind {
+			case "ollama":
+				if _, ok := a.(*provider.Ollama); !ok {
+					t.Fatalf("provider type = %T", a)
+				}
+			case "openrouter":
+				if _, ok := a.(*provider.OpenRouter); !ok {
+					t.Fatalf("provider type = %T", a)
+				}
+			}
+		})
+	}
 }
 
 func mustResolved(t *testing.T, dir string) string {

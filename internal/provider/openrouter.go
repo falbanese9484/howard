@@ -41,6 +41,8 @@ var openRouterStreamClient = &http.Client{
 }
 
 type OpenRouter struct {
+	conversationState
+	execution  *ExecutionState
 	url        string
 	apiKey     string
 	model      string
@@ -107,12 +109,13 @@ func NewOpenRouter(
 	log *logger.Logger,
 	cfg *config.AgentConfig,
 	cache *types.ModelCache,
+	execution *ExecutionState,
 ) (*OpenRouter, error) {
 	if cfg.ApiKey == "" {
 		return nil, errors.New("OpenRouter API key required")
 	}
 
-	tools := cfg.Tools
+	tools := cloneTools(cfg.Tools)
 	if len(tools) > 0 && log != nil {
 		log.Info("loaded tools config", "tools", len(tools))
 	}
@@ -124,6 +127,7 @@ func NewOpenRouter(
 	}
 
 	return &OpenRouter{
+		execution:  execution,
 		url:        openRouterChatURL,
 		apiKey:     cfg.ApiKey,
 		model:      cfg.Model,
@@ -135,17 +139,30 @@ func NewOpenRouter(
 }
 
 func (o *OpenRouter) GenerateRequest(prompt string) *types.ChatRequest {
+	o.modelMu.RLock()
+	defer o.modelMu.RUnlock()
 	return &types.ChatRequest{
 		Model:    o.model,
 		Messages: []types.Message{{Role: "user", Content: prompt}},
-		Tools:    o.tools,
+		Tools:    cloneTools(o.tools),
 		Stream:   true,
 	}
 }
 
 func (o *OpenRouter) Chat(conn *types.BusConnector) {
+	if !o.turnMu.TryLock() {
+		select {
+		case conn.ErrorChan <- ErrConversationBusy:
+		case <-conn.Ctx.Done():
+		}
+		return
+	}
+	defer o.turnMu.Unlock()
+	o.modelMu.RLock()
+	model := o.model
+	o.modelMu.RUnlock()
 	// TODO(review): this agentic loop is ~90% identical to Ollama.Chat; extract a shared
-	// driver taking a sendChat-like func. Also: openrouter.go has no test coverage. See notes/review-checklist.md.
+	// driver taking a sendChat-like func. See notes/review-checklist.md.
 	newMessages := openRouterMessages(conn.Request.Messages)
 	if len(newMessages) == 0 && conn.Request.Prompt != "" {
 		newMessages = []openRouterMessage{{Role: "user", Content: conn.Request.Prompt}}
@@ -161,7 +178,7 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 
 	const maxToolRounds = 100
 	for range maxToolRounds {
-		assistantMsg, calls, err := o.sendChat(conn, messages, tools)
+		assistantMsg, calls, err := o.sendChat(conn, model, messages, tools)
 		if err != nil {
 			conn.ErrorChan <- err
 			return
@@ -169,8 +186,6 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 
 		messages = append(messages, assistantMsg)
 		if len(calls) == 0 {
-			// TODO(review): o.messages is mutated from a goroutine (bus.Send) without
-			// synchronization. Add a mutex or serialize sends through the bus. See notes/review-checklist.md.
 			// TODO(review): conversation history grows unbounded and re-sends full tool
 			// output every turn; add a context budget / truncation. See notes/review-checklist.md.
 			o.messages = messages
@@ -181,7 +196,7 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 		for _, call := range calls {
 			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s - %s]\n",
 				call.Function.Name, call.Function.Arguments), Kind: types.ResponseKindToolStatus}
-			result, err := executeToolCall(call)
+			result, err := o.execution.executeToolCall(call)
 			if err != nil {
 				result = "tool error: " + err.Error()
 			}
@@ -198,11 +213,12 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 }
 
 func (o *OpenRouter) sendChat(conn *types.BusConnector,
+	model string,
 	messages []openRouterMessage,
 	tools []config.ToolConfig,
 ) (openRouterMessage, []types.ToolCall, error) {
 	reqBody := openRouterRequest{
-		Model:    o.model,
+		Model:    model,
 		Messages: messages,
 		Tools:    ollamaTools(tools),
 		Stream:   true,
@@ -450,5 +466,7 @@ func (o *OpenRouter) RetrieveModels() ([]types.Model, error) {
 }
 
 func (o *OpenRouter) SetModel(model string) {
+	o.modelMu.Lock()
+	defer o.modelMu.Unlock()
 	o.model = model
 }

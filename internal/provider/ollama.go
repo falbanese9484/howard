@@ -20,6 +20,8 @@ const (
 )
 
 type Ollama struct {
+	conversationState
+	execution  *ExecutionState
 	url        string
 	model      string
 	messages   []types.Message
@@ -65,8 +67,9 @@ type ollamaToolProperty struct {
 func NewOllama(log *logger.Logger,
 	cfg *config.AgentConfig,
 	cache *types.ModelCache,
+	execution *ExecutionState,
 ) *Ollama {
-	tools := cfg.Tools
+	tools := cloneTools(cfg.Tools)
 	if len(tools) > 0 && log != nil {
 		log.Info("loaded tools config", "tools", len(tools))
 	}
@@ -78,6 +81,7 @@ func NewOllama(log *logger.Logger,
 	}
 
 	return &Ollama{
+		execution:  execution,
 		url:        ollamaChatURL,
 		model:      cfg.Model,
 		messages:   messages,
@@ -88,16 +92,33 @@ func NewOllama(log *logger.Logger,
 }
 
 func (o *Ollama) GenerateRequest(prompt string) *types.ChatRequest {
+	o.modelMu.RLock()
+	defer o.modelMu.RUnlock()
 	return &types.ChatRequest{
 		Model:    o.model,
 		Messages: []types.Message{{Role: "user", Content: prompt}},
-		Tools:    o.tools,
+		Tools:    cloneTools(o.tools),
 		Stream:   true,
 	}
 }
 
 func (o *Ollama) Chat(conn *types.BusConnector) {
-	newMessages := conn.Request.Messages
+	if !o.turnMu.TryLock() {
+		select {
+		case conn.ErrorChan <- ErrConversationBusy:
+		case <-conn.Ctx.Done():
+		}
+		return
+	}
+	defer o.turnMu.Unlock()
+	o.modelMu.RLock()
+	model := o.model
+	o.modelMu.RUnlock()
+	newMessages, err := cloneMessages(conn.Request.Messages)
+	if err != nil {
+		conn.ErrorChan <- err
+		return
+	}
 	if len(newMessages) == 0 && conn.Request.Prompt != "" {
 		newMessages = []types.Message{{
 			Role:    "user",
@@ -115,7 +136,7 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 
 	const maxToolRounds = 100
 	for range maxToolRounds {
-		assistantMsg, err := o.sendChat(conn, messages, tools)
+		assistantMsg, err := o.sendChat(conn, model, messages, tools)
 		if err != nil {
 			conn.ErrorChan <- err
 			return
@@ -123,8 +144,6 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 
 		messages = append(messages, assistantMsg)
 		if len(assistantMsg.ToolCalls) == 0 {
-			// TODO(review): o.messages is mutated from a goroutine (bus.Send) without
-			// synchronization. Add a mutex or serialize sends through the bus. See notes/review-checklist.md.
 			// TODO(review): conversation history grows unbounded and re-sends full tool
 			// output every turn; add a context budget / truncation. See notes/review-checklist.md.
 			o.messages = messages
@@ -140,7 +159,7 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 				Kind:    types.ResponseKindToolStatus,
 				Context: conn.Request.Context,
 			}
-			result, err := executeToolCall(call)
+			result, err := o.execution.executeToolCall(call)
 			if err != nil {
 				result = "tool error: " + err.Error()
 			}
@@ -157,11 +176,12 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 
 func (o *Ollama) sendChat(
 	conn *types.BusConnector,
+	model string,
 	messages []types.Message,
 	tools []config.ToolConfig,
 ) (types.Message, error) {
 	reqBody := ollamaChatRequest{
-		Model:    o.model,
+		Model:    model,
 		Messages: messages,
 		Tools:    ollamaTools(tools),
 		Stream:   true,
@@ -308,5 +328,7 @@ func (o *Ollama) RetrieveModels() ([]types.Model, error) {
 }
 
 func (o *Ollama) SetModel(model string) {
+	o.modelMu.Lock()
+	defer o.modelMu.Unlock()
 	o.model = model
 }

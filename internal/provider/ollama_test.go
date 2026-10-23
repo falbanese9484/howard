@@ -33,7 +33,7 @@ func TestOllamaChatSendsFinalMessageAfterToolCall(t *testing.T) {
 	}))
 	defer server.Close()
 
-	o := &Ollama{url: server.URL, model: "test-model"}
+	o := &Ollama{url: server.URL, model: "test-model", execution: setupToolTestProject(t)}
 	responses := make(chan *types.ChatResponse, 10)
 	errors := make(chan error, 1)
 	done := make(chan bool, 1)

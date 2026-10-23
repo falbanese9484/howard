@@ -20,22 +20,26 @@ func Run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	p := tea.NewProgram(initModel(cfg), tea.WithAltScreen())
+	model, err := initModel(cfg)
+	if err != nil {
+		return err
+	}
+	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err = p.Run()
 	return err
 }
 
-func initModel(cfg *config.AgentConfig) tea.Model {
+func initModel(cfg *config.AgentConfig) (tea.Model, error) {
 	width, height, _ := term.GetSize(0)
 
 	log, err := app.NewLogger()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("initialize logger: %w", err)
 	}
 
 	prov, err := app.NewProvider(cfg, log, "")
 	if err != nil {
-		log.Fatal("Failed to initialize provider: ", err)
+		return nil, fmt.Errorf("initialize provider: %w", err)
 	}
 
 	bus := chat.NewBus(log, prov)
@@ -57,5 +61,5 @@ func initModel(cfg *config.AgentConfig) tea.Model {
 		styles.Connected.Render("Connected to: ") + styles.ConnectedModel.Render(cfg.Model) + "\n\n"
 	m.SetInitialContent(logo)
 
-	return m
+	return m, nil
 }

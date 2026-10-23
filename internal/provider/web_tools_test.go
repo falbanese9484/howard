@@ -22,16 +22,10 @@ func (s stubSearcher) Search(_ context.Context, _ string, _ int) ([]web.Result, 
 	return s.results, s.err
 }
 
-func resetWebService(t *testing.T) {
-	t.Helper()
-	t.Cleanup(func() { SetWebService(nil) })
-}
-
 func TestExecuteWebSearchDisabled(t *testing.T) {
-	resetWebService(t)
-	SetWebService(web.NewService(web.Config{Enabled: false}, web.NoopSearcher{}))
+	state := setupToolTestProject(t)
 
-	_, err := executeToolCall(types.ToolCall{
+	_, err := state.executeToolCall(types.ToolCall{
 		Function: types.ToolCallFunction{
 			Name:      "web_search",
 			Arguments: map[string]any{"query": "go context"},
@@ -43,16 +37,16 @@ func TestExecuteWebSearchDisabled(t *testing.T) {
 }
 
 func TestExecuteWebSearchFormatsResults(t *testing.T) {
-	resetWebService(t)
+	state := setupToolTestProject(t)
 	svc := web.NewService(web.Config{Enabled: true}, stubSearcher{
 		results: []web.Result{
 			{Title: "Go Docs", URL: "https://pkg.go.dev/", Snippet: "the docs"},
 			{Title: "Effective Go", URL: "https://go.dev/doc/effective_go"},
 		},
 	})
-	SetWebService(svc)
+	state.web = svc
 
-	out, err := executeToolCall(types.ToolCall{
+	out, err := state.executeToolCall(types.ToolCall{
 		Function: types.ToolCallFunction{
 			Name:      "web_search",
 			Arguments: map[string]any{"query": "go", "max_results": float64(3)},
@@ -70,19 +64,19 @@ func TestExecuteWebSearchFormatsResults(t *testing.T) {
 }
 
 func TestExecuteFetchURLBlocksUnknownDomain(t *testing.T) {
-	resetWebService(t)
+	state := setupToolTestProject(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, "<html><body>hi</body></html>")
 	}))
 	defer srv.Close()
 
-	SetWebService(web.NewService(web.Config{
+	state.web = web.NewService(web.Config{
 		Enabled:         true,
 		DomainAllowlist: []string{"some-other.host"},
-	}, web.NoopSearcher{}))
+	}, web.NoopSearcher{})
 
-	_, err := executeToolCall(types.ToolCall{
+	_, err := state.executeToolCall(types.ToolCall{
 		Function: types.ToolCallFunction{
 			Name:      "fetch_url",
 			Arguments: map[string]any{"url": srv.URL},
@@ -94,7 +88,7 @@ func TestExecuteFetchURLBlocksUnknownDomain(t *testing.T) {
 }
 
 func TestExecuteFetchURLAllowedDomain(t *testing.T) {
-	resetWebService(t)
+	state := setupToolTestProject(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		fmt.Fprint(w, "hello world")
@@ -102,12 +96,12 @@ func TestExecuteFetchURLAllowedDomain(t *testing.T) {
 	defer srv.Close()
 
 	host := web.HostFromURL(srv.URL)
-	SetWebService(web.NewService(web.Config{
+	state.web = web.NewService(web.Config{
 		Enabled:         true,
 		DomainAllowlist: []string{host},
-	}, web.NoopSearcher{}))
+	}, web.NoopSearcher{})
 
-	out, err := executeToolCall(types.ToolCall{
+	out, err := state.executeToolCall(types.ToolCall{
 		Function: types.ToolCallFunction{
 			Name: "fetch_url",
 			Arguments: map[string]any{
@@ -128,10 +122,10 @@ func TestExecuteFetchURLAllowedDomain(t *testing.T) {
 }
 
 func TestExecuteFetchURLRejectsNonHTTP(t *testing.T) {
-	resetWebService(t)
-	SetWebService(web.NewService(web.Config{Enabled: true}, web.NoopSearcher{}))
+	state := setupToolTestProject(t)
+	state.web = web.NewService(web.Config{Enabled: true}, web.NoopSearcher{})
 
-	_, err := executeToolCall(types.ToolCall{
+	_, err := state.executeToolCall(types.ToolCall{
 		Function: types.ToolCallFunction{
 			Name:      "fetch_url",
 			Arguments: map[string]any{"url": "file:///etc/passwd"},
