@@ -35,9 +35,10 @@ has a corresponding `//TODO:` comment at the referenced code location.
   Optional params (e.g. `ls` path, `fetch_url` format) cannot be expressed and the
   model is told they are mandatory. Add `type` and `required` to `ToolParameter`.
 
-- [ ] **`bash` timeout orphans child processes** — `tools.go:204-207`.
-  `CommandContext` sends SIGKILL only to the direct child; spawned grandchildren leak.
-  Use a process group / `cmd.Cancel` to kill the whole tree.
+- [x] **Worker `bash` timeout orphans child processes** — resolved for the Linux
+  worker path by per-command process groups, stop verification, and owned-shell
+  reaping. Other worker platforms fail closed. Legacy non-Linux CLI/TUI bash keeps
+  its prior direct-child behavior; see `notes/run-contract.md` for exact limits.
 
 ## Low Priority — Polish / Tech Debt
 

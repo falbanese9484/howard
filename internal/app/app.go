@@ -26,13 +26,19 @@ func NewLogger() (*logger.Logger, error) {
 }
 
 func NewProvider(cfg *config.AgentConfig, log *logger.Logger, workspaceOverride string) (types.Provider, error) {
+	return newProvider(cfg, log, workspaceOverride, false)
+}
+
+// worker selects verified process cleanup without changing the legacy CLI/TUI
+// platform contract. It is fixed at construction, never shared mutable policy.
+func newProvider(cfg *config.AgentConfig, log *logger.Logger, workspaceOverride string, worker bool) (types.Provider, error) {
 	cache := types.NewModelCache(3600)
 
 	root, err := resolveWorkspaceRoot(cfg, workspaceOverride)
 	if err != nil {
 		return nil, err
 	}
-	state, err := buildExecutionState(root, cfg)
+	state, err := buildExecutionState(root, cfg, worker)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +99,7 @@ func resolveWorkspaceRoot(cfg *config.AgentConfig, override string) (string, err
 
 // buildExecutionState creates fresh tool state for each provider, including a
 // separate web service and search backend.
-func buildExecutionState(root string, cfg *config.AgentConfig) (*provider.ExecutionState, error) {
+func buildExecutionState(root string, cfg *config.AgentConfig, worker bool) (*provider.ExecutionState, error) {
 	wc := cfg.Web
 	searcher := web.Searcher(web.NoopSearcher{})
 	switch strings.ToLower(strings.TrimSpace(wc.SearchBackend)) {
@@ -107,7 +113,11 @@ func buildExecutionState(root string, cfg *config.AgentConfig) (*provider.Execut
 		searcher = web.NewBraveSearcher(apiKey)
 	}
 
-	return provider.NewExecutionState(root, web.Config{
+	construct := provider.NewExecutionState
+	if worker {
+		construct = provider.NewWorkerExecutionState
+	}
+	return construct(root, web.Config{
 		Enabled:         wc.Enabled,
 		SearchBackend:   wc.SearchBackend,
 		DomainAllowlist: wc.DomainAllowlist,
