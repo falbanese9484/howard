@@ -12,6 +12,7 @@ import (
 
 	"github.com/falbanese9484/agent-harness/internal/types"
 	"github.com/falbanese9484/agent-harness/internal/web"
+	"github.com/falbanese9484/agent-harness/pkg/config"
 )
 
 // Sandbox utility functions for Agentic Tooling
@@ -21,13 +22,17 @@ const bashTimeout = 60 * time.Second
 // ExecutionState owns a worker's fixed workspace and web service. Construct one
 // per provider/conversation; file checks are not an OS or shell sandbox.
 type ExecutionState struct {
-	root   string
-	web    *web.Service
-	worker bool
+	root    string
+	web     *web.Service
+	worker  bool
+	profile ToolProfile
+	allowed map[string]bool
+	tools   []config.ToolConfig
 }
 
-// NewExecutionState resolves the workspace once, independently of later CWD
-// changes. The searcher must be safe for concurrent use if explicitly shared.
+// NewExecutionState constructs legacy CLI/TUI state with full-user tool access.
+// Workers must use NewWorkerExecutionState instead. The workspace is resolved
+// once, independently of later CWD changes. A shared searcher must be concurrency-safe.
 func NewExecutionState(root string, cfg web.Config, searcher web.Searcher) (*ExecutionState, error) {
 	if root == "" {
 		return nil, fmt.Errorf("workspace root is required")
@@ -47,22 +52,37 @@ func NewExecutionState(root string, cfg web.Config, searcher web.Searcher) (*Exe
 	if !info.IsDir() {
 		return nil, fmt.Errorf("workspace root is not a directory: %s", abs)
 	}
-	return &ExecutionState{root: abs, web: web.NewService(cfg, searcher)}, nil
+	return &ExecutionState{root: abs, web: web.NewService(cfg, searcher), profile: legacyCLI}, nil
 }
 
-// NewWorkerExecutionState requires verified process-group cleanup for bash.
-// Unlike legacy CLI/TUI state, workers fail closed on unsupported platforms.
-func NewWorkerExecutionState(root string, cfg web.Config, searcher web.Searcher) (*ExecutionState, error) {
+// NewWorkerExecutionState fixes a restricted policy and configured tool names
+// for this worker. No worker profile permits shell execution or file mutations.
+func NewWorkerExecutionState(root string, cfg web.Config, searcher web.Searcher, profile ToolProfile, tools []config.ToolConfig) (*ExecutionState, error) {
+	if !profile.validWorker() {
+		return nil, fmt.Errorf("unknown or missing worker tool profile %q", profile)
+	}
 	state, err := NewExecutionState(root, cfg, searcher)
 	if err != nil {
 		return nil, err
 	}
 	state.worker = true
+	state.profile = profile
+	state.allowed = make(map[string]bool)
+	for _, tool := range tools {
+		if profile.permits(tool.Name) {
+			state.allowed[tool.Name] = true
+			state.tools = append(state.tools, tool)
+		}
+	}
+	state.tools = cloneTools(state.tools)
 	return state, nil
 }
 
 func (s *ExecutionState) executeToolCall(ctx context.Context, call types.ToolCall) (string, error) {
 	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := s.authorizeTool(call.Function.Name); err != nil {
 		return "", err
 	}
 	if _, err := s.findProjectRoot(); err != nil {

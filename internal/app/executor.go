@@ -4,14 +4,17 @@ import (
 	"github.com/falbanese9484/agent-harness/internal/domain"
 	"github.com/falbanese9484/agent-harness/internal/executor"
 	"github.com/falbanese9484/agent-harness/internal/logger"
+	"github.com/falbanese9484/agent-harness/internal/provider"
 	"github.com/falbanese9484/agent-harness/pkg/config"
 )
 
 // NewExecutor snapshots configuration and constructs a fresh provider, tool
 // state, and conversation per run. Requests select the model and workspace, but
 // must match the configured provider so credentials cannot cross backends.
+// The caller must explicitly choose a worker tool profile; zero/unknown profiles
+// fail setup before model execution. Prompt text cannot change this policy.
 // SessionID is correlation only; this executor does not retain conversation history.
-func NewExecutor(cfg *config.AgentConfig, log *logger.Logger) *executor.Executor {
+func NewExecutor(cfg *config.AgentConfig, log *logger.Logger, profile provider.ToolProfile) *executor.Executor {
 	if cfg == nil {
 		return executor.New(nil)
 	}
@@ -31,7 +34,7 @@ func NewExecutor(cfg *config.AgentConfig, log *logger.Logger) *executor.Executor
 		}
 		runConfig := base
 		runConfig.Model = request.Model
-		p, err := newProvider(&runConfig, log, request.WorkspaceRoot, true)
+		p, err := newProvider(&runConfig, log, request.WorkspaceRoot, true, profile)
 		if err != nil {
 			return nil, err
 		}

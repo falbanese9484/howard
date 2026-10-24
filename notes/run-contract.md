@@ -26,12 +26,12 @@ not an authenticated worker service.
 
 ## In-process executor (#6)
 
-Construct with `app.NewExecutor(cfg, log)`, then synchronously call
+Construct with `app.NewExecutor(cfg, log, provider.ReadOnly)`, then synchronously call
 `Execute(ctx, request, executor.Observer{Lifecycle: ..., Output: ...})`.
 
 - Configuration is snapshotted at construction. Each accepted run constructs a
   fresh provider, conversation, and isolated tool execution state through
-  `app.NewProvider`. The request selects model and workspace; its provider must
+  the private worker factory (not the legacy `app.NewProvider`). The request selects model and workspace; its provider must
   match the configured backend so credentials do not cross providers.
 - `SessionID` is correlation metadata only. Reusing it does not restore history.
   Lifecycle and output callbacks belong to a single call; independent runs may
@@ -59,6 +59,45 @@ Construct with `app.NewExecutor(cfg, log)`, then synchronously call
   failures. Assistant/tool output is still ordinary, potentially sensitive
   provider content, not a sanitized result/artifact format.
 
+## Restricted worker tools (#8)
+
+The embedding caller selects `provider.ReadOnly` or `provider.ReadOnlyWeb` when
+constructing `app.NewExecutor`. This is a Go API policy input, deliberately absent
+from `RunRequest`, JSON prompts, and model tool arguments. Empty, unknown, and
+`legacy-cli` worker profiles fail setup before any model call. The profile value
+and configured tool names are snapshotted, so later caller configuration changes
+cannot widen an existing executor's permissions.
+
+- `ReadOnly`: only `ls` and `read_file`, and only when explicitly present in the
+  configured tool list. An empty list permits no tools.
+- `ReadOnlyWeb`: the same file tools plus explicitly configured `web_search` and
+  `fetch_url`. Web must also be enabled; existing search backend, domain allowlist,
+  fetch limits and timeouts still apply. This is explicit outbound-network
+  authority, not a guarantee that external servers have no side effects. The
+  existing fetch implementation checks the initial URL host; automatic redirects
+  are not reauthorized. This profile is not a strict egress/SSRF boundary.
+- No worker profile allows `bash`, `edit_file`, `write_file`, or `mkdir`.
+  Unknown tool names are denied. A model-supplied shell call is rejected even if
+  the caller's configuration accidentally includes its definition.
+- Dispatch checks policy before arguments or tool side effects. Worker provider
+  constructors filter the advertised definitions and system-prompt tool list.
+  Per-turn `ChatRequest.Tools` cannot widen or replace worker definitions; the
+  provider uses its fixed construction-time list in every model round.
+- Local CLI/TUI uses `app.NewProvider` and an explicit internal legacy policy. Its
+  full-user shell behavior is intentionally unchanged; it is **not** an endpoint
+  for untrusted multi-user execution. Do not build a worker service by wrapping
+  the legacy factory. Low-level `executor.New` accepts trusted custom code and
+  does not make arbitrary custom turns safe.
+
+File reads/listing use the resolved workspace and existing lexical/symlink
+containment checks. These reject ordinary `..`, outside absolute paths, and
+symlink escapes, but the check and open are not atomic. A concurrently modified
+filesystem, hard links, special files, or mounts are not an OS isolation boundary.
+Do not place secrets in a readable workspace or describe this policy as a shell
+sandbox, tenant isolation, RBAC, or secure service authentication. Those require
+separate controls. The Linux shell cleanup helper remains for legacy/internal
+use; restricted workers cannot invoke it at all.
+
 ## End-to-end cancellation (#7)
 
 - The executor is the single terminal owner. After the turn has joined all work,
@@ -77,11 +116,11 @@ Construct with `app.NewExecutor(cfg, log)`, then synchronously call
   completed writes are not rolled back. No later tool is dispatched after
   cancellation is observed. An in-flight send/operation may race the cancellation
   request, but there is no output or execution after the terminal outcome.
-- Worker bash is supported only on **Linux with readable `/proc` process/thread
+- The lower-level worker bash cleanup implementation is supported only on **Linux with readable `/proc` process/thread
   metadata and exclusive ownership of child waits**. The host must not ignore
   `SIGCHLD`, set `SA_NOCLDWAIT`, or externally reap the executor's children.
-  `app.NewExecutor` constructs immutable worker execution state; other platforms
-  reject worker bash before spawning. This does not disable ordinary model/file/web
+  The #8 worker profiles now reject bash on all platforms before this helper.
+  The helper also rejects unsupported worker platforms before spawning. This does not disable ordinary model/file/web
   runs. Legacy `app.NewProvider` (CLI/TUI) keeps its existing bash compatibility on
   other platforms, without the worker's descendant-cleanup guarantee.
 - Linux bash creates a dedicated process group and derives its existing 60-second
@@ -97,11 +136,10 @@ Construct with `app.NewExecutor(cfg, log)`, then synchronously call
   rather than emitting a false terminal. Uninterruptible kernel work can delay
   cancellation. Descendants deliberately escaping the group/session are outside
   this mechanism: bash still has the user's full permissions, not an OS sandbox.
-  Durable cancellation, restricted tool profiles (#8), and CLI/TUI cancel controls
-  remain separate work.
+  Durable cancellation and CLI/TUI cancel controls remain separate work.
 
 Provider token/tool streaming remains separate in `types.ChatResponse`. Result
-payloads, artifact export, restricted tool policy, persistence, API/auth, Bedrock,
+payloads, artifact export, persistence, API/auth, Bedrock,
 and Jarvis integration remain deferred. Bash retains the user's full permissions.
 No code from Development PR #3 is included.
 
@@ -140,3 +178,19 @@ the original domain contract do not depend on it. There are no data migrations.
   tests pass here. Provider test binaries cross-compile for darwin-arm64 and
   windows-amd64; these binaries were not run, and no macOS runtime cleanup claim
   is made. Unsupported worker bash fails closed; legacy behavior stays separate.
+
+### Tool-profile verification record (2026-10-24, Go 1.27.3 / linux-amd64)
+
+- Focused provider/app/executor/domain/web tests pass under `-race -count=10`.
+  Policy cases cover zero/unknown profiles, shell/mutation/unconfigured dispatch,
+  caller mutation of tool names/parameters, injected per-turn tool definitions,
+  model-originated forbidden calls for both providers, path/symlink escape,
+  explicit web enablement and domain checks, and concurrent profile isolation.
+- Full `go test -count=1 ./...` and `go test -race -count=1 ./...` reproduce only
+  the two `internal/chat` logging failures above. Both also reproduce on clean
+  main `5448848852f89746d1728d656391b220e7615006`; full suite is **not** a pass.
+- `go vet ./...`, `go build ./...`, and `git diff --check` pass. Provider test
+  binaries cross-compile for darwin-arm64 and windows-amd64; neither was run.
+- No live provider calls, Kubernetes/container deployment tests, or new shell
+  cleanup claims. The existing shell cancellation integration fixture now uses
+  the explicit legacy provider because restricted worker profiles deny shell.

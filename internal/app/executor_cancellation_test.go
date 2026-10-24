@@ -12,6 +12,7 @@ import (
 
 	"github.com/falbanese9484/agent-harness/internal/domain"
 	"github.com/falbanese9484/agent-harness/internal/executor"
+	"github.com/falbanese9484/agent-harness/internal/provider"
 	"github.com/falbanese9484/agent-harness/internal/types"
 	"github.com/falbanese9484/agent-harness/pkg/config"
 )
@@ -44,7 +45,7 @@ func TestExecutorCancellationClosesModelStreamBeforeTerminal(t *testing.T) {
 	var events []domain.RunEvent
 	finished := make(chan error, 1)
 	go func() {
-		finished <- NewExecutor(&config.AgentConfig{Provider: "ollama"}, nil).Execute(ctx, req, executor.Observer{Lifecycle: func(event domain.RunEvent) {
+		finished <- NewExecutor(&config.AgentConfig{Provider: "ollama"}, nil, provider.ReadOnly).Execute(ctx, req, executor.Observer{Lifecycle: func(event domain.RunEvent) {
 			if event.Status.Terminal() {
 				select {
 				case <-closed:
@@ -89,7 +90,7 @@ func TestExecutorStoppedOutputConsumerCanCancel(t *testing.T) {
 	var events []domain.RunEvent
 	finished := make(chan error, 1)
 	go func() {
-		finished <- NewExecutor(&config.AgentConfig{Provider: "ollama"}, nil).Execute(ctx, req, executor.Observer{
+		finished <- NewExecutor(&config.AgentConfig{Provider: "ollama"}, nil, provider.ReadOnly).Execute(ctx, req, executor.Observer{
 			Lifecycle: func(event domain.RunEvent) { events = append(events, event) },
 			Output: func(response types.ChatResponse) {
 				once.Do(func() { close(entered) })

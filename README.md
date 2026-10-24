@@ -113,29 +113,33 @@ must use independently constructed providers. Model changes are synchronized and
 take effect on the next turn, without changing an active tool round-trip. Callers
 must not mutate requests while a turn is using them.
 
-This is in-process state isolation. Bash still has the user's full permissions,
+This is in-process state isolation. Legacy CLI/TUI bash still has the user's full permissions,
 and path/symlink checks do not protect against concurrent filesystem replacement.
 Separate worker objects do not isolate processes or two workers deliberately
-configured to use the same files. Lifecycle execution, cancellation, restricted
-tool policy, and durable sessions are subsequent slices.
+configured to use the same files. The worker executor adds lifecycle execution,
+cancellation, and restricted tool profiles; durable sessions remain deferred.
 
 ### In-process lifecycle executor
 
-`app.NewExecutor(cfg, log)` exposes a synchronous internal
+`app.NewExecutor(cfg, log, provider.ReadOnly)` exposes a synchronous internal
 `Execute(ctx, domain.RunRequest, executor.Observer)` entry point. It constructs
 fresh provider/tool state per run and emits ordered lifecycle events separately
 from assistant/tool output. Active RunIDs are unique within that executor;
 `SessionID` correlates events but does not restore conversation history.
 
-Accepted turns emit `queued`, `running`, and one `succeeded`/`failed` outcome;
+Accepted turns emit `queued`, `running`, and one `succeeded`/`failed`/`canceled` outcome;
 setup failure may fail directly from `queued`. Invalid, already-canceled, and
 duplicate-active requests are rejected before acceptance. Exported failures use
 fixed sanitized messages. The adapter waits for provider return and pending
 output before finalizing. Callbacks must return promptly.
 
-This entry point does not replace the CLI/TUI or guarantee in-flight cancellation;
-it never emits `canceled`. See [the run contract](notes/run-contract.md) for
+This entry point does not replace the CLI/TUI. A canceled terminal is emitted
+only after the provider turn stops; completed side effects are not rolled back. See [the run contract](notes/run-contract.md) for
 ownership, context, failure and rollback semantics.
+
+Worker tool permissions are enforced at dispatch, not inferred from prompts. See
+[restricted worker profiles](notes/run-contract.md#restricted-worker-tools-8) for
+read-only defaults, explicit web access, and the separate legacy CLI/TUI boundary.
 
 ## License
 MIT

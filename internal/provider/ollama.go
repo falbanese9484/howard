@@ -69,7 +69,7 @@ func NewOllama(log *logger.Logger,
 	cache *types.ModelCache,
 	execution *ExecutionState,
 ) *Ollama {
-	tools := cloneTools(cfg.Tools)
+	tools := execution.filterTools(cfg.Tools)
 	if len(tools) > 0 && log != nil {
 		log.Info("loaded tools config", "tools", len(tools))
 	}
@@ -130,7 +130,7 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 	messages = append(messages, newMessages...)
 
 	tools := conn.Request.Tools
-	if len(tools) == 0 {
+	if len(tools) == 0 || o.execution == nil || o.execution.worker {
 		tools = o.tools
 	}
 

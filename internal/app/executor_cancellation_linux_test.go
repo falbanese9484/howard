@@ -23,7 +23,7 @@ import (
 	"github.com/falbanese9484/agent-harness/pkg/config"
 )
 
-func TestExecutorShellCancellationTerminalFollowsProcessCleanup(t *testing.T) {
+func TestLegacyProviderShellCancellationTerminalFollowsProcessCleanup(t *testing.T) {
 	old := http.DefaultClient
 	t.Cleanup(func() { http.DefaultClient = old })
 	var requests atomic.Int32
@@ -42,7 +42,13 @@ func TestExecutorShellCancellationTerminalFollowsProcessCleanup(t *testing.T) {
 	var events []domain.RunEvent
 	finished := make(chan error, 1)
 	go func() {
-		finished <- NewExecutor(&config.AgentConfig{Provider: "ollama"}, nil).Execute(ctx, req, executor.Observer{Lifecycle: func(event domain.RunEvent) {
+		finished <- executor.New(func(request domain.RunRequest) (executor.Turn, error) {
+			p, err := NewProvider(&config.AgentConfig{Provider: "ollama"}, nil, request.WorkspaceRoot)
+			if err != nil {
+				return nil, err
+			}
+			return executor.NewProviderTurn(p), nil
+		}).Execute(ctx, req, executor.Observer{Lifecycle: func(event domain.RunEvent) {
 			if event.Status.Terminal() {
 				parentBytes, pErr := os.ReadFile(filepath.Join(root, "parent.pid"))
 				childBytes, cErr := os.ReadFile(filepath.Join(root, "child.pid"))

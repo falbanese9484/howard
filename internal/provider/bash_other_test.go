@@ -14,7 +14,7 @@ import (
 )
 
 func TestWorkerBashFailsClosedOnUnsupportedPlatform(t *testing.T) {
-	state, err := NewWorkerExecutionState(t.TempDir(), web.Config{}, nil)
+	state, err := NewWorkerExecutionState(t.TempDir(), web.Config{}, nil, ReadOnly, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
