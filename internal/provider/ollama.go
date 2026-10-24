@@ -104,19 +104,19 @@ func (o *Ollama) GenerateRequest(prompt string) *types.ChatRequest {
 
 func (o *Ollama) Chat(conn *types.BusConnector) {
 	if !o.turnMu.TryLock() {
-		select {
-		case conn.ErrorChan <- ErrConversationBusy:
-		case <-conn.Ctx.Done():
-		}
+		sendEvent(conn.Ctx, conn.ErrorChan, ErrConversationBusy)
 		return
 	}
 	defer o.turnMu.Unlock()
+	if conn.Ctx.Err() != nil {
+		return
+	}
 	o.modelMu.RLock()
 	model := o.model
 	o.modelMu.RUnlock()
 	newMessages, err := cloneMessages(conn.Request.Messages)
 	if err != nil {
-		conn.ErrorChan <- err
+		sendEvent(conn.Ctx, conn.ErrorChan, err)
 		return
 	}
 	if len(newMessages) == 0 && conn.Request.Prompt != "" {
@@ -136,30 +136,41 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 
 	const maxToolRounds = 100
 	for range maxToolRounds {
+		if conn.Ctx.Err() != nil {
+			return
+		}
 		assistantMsg, err := o.sendChat(conn, model, messages, tools)
 		if err != nil {
-			conn.ErrorChan <- err
+			sendEvent(conn.Ctx, conn.ErrorChan, err)
 			return
 		}
 
+		if conn.Ctx.Err() != nil {
+			return
+		}
 		messages = append(messages, assistantMsg)
 		if len(assistantMsg.ToolCalls) == 0 {
 			// TODO(review): conversation history grows unbounded and re-sends full tool
 			// output every turn; add a context budget / truncation. See notes/review-checklist.md.
 			o.messages = messages
-			conn.DoneChannel <- true
+			sendEvent(conn.Ctx, conn.DoneChannel, true)
 			return
 		}
 
 		for _, call := range assistantMsg.ToolCalls {
-			conn.ResponseChan <- &types.ChatResponse{
+			if !sendEvent(conn.Ctx, conn.ResponseChan, &types.ChatResponse{
 				Response: fmt.Sprintf("\n[executing tool: %s -- %s]\n",
 					call.Function.Name,
 					call.Function.Arguments),
 				Kind:    types.ResponseKindToolStatus,
 				Context: conn.Request.Context,
+			}) {
+				return
 			}
-			result, err := o.execution.executeToolCall(call)
+			result, err := o.execution.executeToolCall(conn.Ctx, call)
+			if conn.Ctx.Err() != nil {
+				return
+			}
 			if err != nil {
 				result = "tool error: " + err.Error()
 			}
@@ -171,7 +182,7 @@ func (o *Ollama) Chat(conn *types.BusConnector) {
 		}
 	}
 
-	conn.ErrorChan <- fmt.Errorf("maximum tool call rounds exceeded")
+	sendEvent(conn.Ctx, conn.ErrorChan, fmt.Errorf("maximum tool call rounds exceeded"))
 }
 
 func (o *Ollama) sendChat(
@@ -219,6 +230,9 @@ func (o *Ollama) sendChat(
 	var toolCalls []types.ToolCall
 
 	for scanner.Scan() {
+		if conn.Ctx.Err() != nil {
+			return types.Message{}, conn.Ctx.Err()
+		}
 		var chunk ollamaChatResponse
 		if err := json.Unmarshal(scanner.Bytes(), &chunk); err != nil {
 			// TODO(review): silently skipping malformed chunks loses data; OpenRouter aborts
@@ -231,12 +245,14 @@ func (o *Ollama) sendChat(
 			toolCalls = append(toolCalls, chunk.Message.ToolCalls...)
 		}
 		if chunk.Message.Content != "" || chunk.Message.Thinking != "" {
-			conn.ResponseChan <- &types.ChatResponse{
+			if !sendEvent(conn.Ctx, conn.ResponseChan, &types.ChatResponse{
 				Response: chunk.Message.Content,
 				Thinking: chunk.Message.Thinking,
 				Done:     false,
 				Kind:     types.ResponseKindAssistant,
 				Context:  conn.Request.Context,
+			}) {
+				return types.Message{}, conn.Ctx.Err()
 			}
 		}
 		if chunk.Done {

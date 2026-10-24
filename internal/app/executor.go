@@ -31,7 +31,7 @@ func NewExecutor(cfg *config.AgentConfig, log *logger.Logger) *executor.Executor
 		}
 		runConfig := base
 		runConfig.Model = request.Model
-		p, err := NewProvider(&runConfig, log, request.WorkspaceRoot)
+		p, err := newProvider(&runConfig, log, request.WorkspaceRoot, true)
 		if err != nil {
 			return nil, err
 		}

@@ -144,10 +144,10 @@ func TestCancellationBeforeLaunch(t *testing.T) {
 				}
 				validateStream(t, req, events)
 			} else {
-				if err != ErrNotStarted {
+				if err != context.Canceled {
 					t.Fatal(err)
 				}
-				validateStream(t, req, events, domain.RunQueued, domain.RunFailed)
+				validateStream(t, req, events, domain.RunQueued, domain.RunCanceled)
 			}
 			if stage != "setup" && setups != 0 {
 				t.Fatal("unexpected setup")
@@ -279,7 +279,6 @@ func TestProviderAdapterDeliversOutputAndWaitsForReturn(t *testing.T) {
 				})
 			}()
 			await(t, signaled)
-			cancel()
 			select {
 			case <-finished:
 				t.Fatal("finalized before provider stopped")

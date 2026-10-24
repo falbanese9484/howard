@@ -16,7 +16,10 @@ const (
 	webToolTimeout      = 45 * time.Second
 )
 
-func (s *ExecutionState) executeWebSearch(args map[string]any) (string, error) {
+func (s *ExecutionState) executeWebSearch(ctx context.Context, args map[string]any) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	svc := s.web
 	if svc == nil || !svc.Enabled() {
 		return "", web.ErrDisabled
@@ -28,7 +31,7 @@ func (s *ExecutionState) executeWebSearch(args map[string]any) (string, error) {
 	}
 	max := intArg(args, "max_results", 5)
 
-	ctx, cancel := context.WithTimeout(context.Background(), webToolTimeout)
+	ctx, cancel := context.WithTimeout(ctx, webToolTimeout)
 	defer cancel()
 
 	results, err := svc.Search(ctx, query, max)
@@ -49,7 +52,10 @@ func (s *ExecutionState) executeWebSearch(args map[string]any) (string, error) {
 	return b.String(), nil
 }
 
-func (s *ExecutionState) executeFetchURL(args map[string]any) (string, error) {
+func (s *ExecutionState) executeFetchURL(ctx context.Context, args map[string]any) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	svc := s.web
 	if svc == nil || !svc.Enabled() {
 		return "", web.ErrDisabled
@@ -83,7 +89,7 @@ func (s *ExecutionState) executeFetchURL(args map[string]any) (string, error) {
 		maxBytes = cfg.MaxFetchBytes
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, timeout+5*time.Second)
 	defer cancel()
 
 	if err := svc.AuthorizeHost(ctx, host, "fetch_url: "+url); err != nil {

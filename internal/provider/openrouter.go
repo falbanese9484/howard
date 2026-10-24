@@ -151,13 +151,13 @@ func (o *OpenRouter) GenerateRequest(prompt string) *types.ChatRequest {
 
 func (o *OpenRouter) Chat(conn *types.BusConnector) {
 	if !o.turnMu.TryLock() {
-		select {
-		case conn.ErrorChan <- ErrConversationBusy:
-		case <-conn.Ctx.Done():
-		}
+		sendEvent(conn.Ctx, conn.ErrorChan, ErrConversationBusy)
 		return
 	}
 	defer o.turnMu.Unlock()
+	if conn.Ctx.Err() != nil {
+		return
+	}
 	o.modelMu.RLock()
 	model := o.model
 	o.modelMu.RUnlock()
@@ -178,25 +178,36 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 
 	const maxToolRounds = 100
 	for range maxToolRounds {
+		if conn.Ctx.Err() != nil {
+			return
+		}
 		assistantMsg, calls, err := o.sendChat(conn, model, messages, tools)
 		if err != nil {
-			conn.ErrorChan <- err
+			sendEvent(conn.Ctx, conn.ErrorChan, err)
 			return
 		}
 
+		if conn.Ctx.Err() != nil {
+			return
+		}
 		messages = append(messages, assistantMsg)
 		if len(calls) == 0 {
 			// TODO(review): conversation history grows unbounded and re-sends full tool
 			// output every turn; add a context budget / truncation. See notes/review-checklist.md.
 			o.messages = messages
-			conn.DoneChannel <- true
+			sendEvent(conn.Ctx, conn.DoneChannel, true)
 			return
 		}
 
 		for _, call := range calls {
-			conn.ResponseChan <- &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s - %s]\n",
-				call.Function.Name, call.Function.Arguments), Kind: types.ResponseKindToolStatus}
-			result, err := o.execution.executeToolCall(call)
+			if !sendEvent(conn.Ctx, conn.ResponseChan, &types.ChatResponse{Response: fmt.Sprintf("\n[executing tool: %s - %s]\n",
+				call.Function.Name, call.Function.Arguments), Kind: types.ResponseKindToolStatus}) {
+				return
+			}
+			result, err := o.execution.executeToolCall(conn.Ctx, call)
+			if conn.Ctx.Err() != nil {
+				return
+			}
 			if err != nil {
 				result = "tool error: " + err.Error()
 			}
@@ -209,7 +220,7 @@ func (o *OpenRouter) Chat(conn *types.BusConnector) {
 		}
 	}
 
-	conn.ErrorChan <- fmt.Errorf("maximum tool call rounds exceeded")
+	sendEvent(conn.Ctx, conn.ErrorChan, fmt.Errorf("maximum tool call rounds exceeded"))
 }
 
 func (o *OpenRouter) sendChat(conn *types.BusConnector,
@@ -258,6 +269,9 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector,
 	builders := map[int]*openRouterToolCallBuilder{}
 
 	for scanner.Scan() {
+		if conn.Ctx.Err() != nil {
+			return openRouterMessage{}, nil, conn.Ctx.Err()
+		}
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
 			continue
@@ -311,11 +325,13 @@ func (o *OpenRouter) sendChat(conn *types.BusConnector,
 		}
 
 		if delta.Content != "" || thinkingText != "" {
-			conn.ResponseChan <- &types.ChatResponse{
+			if !sendEvent(conn.Ctx, conn.ResponseChan, &types.ChatResponse{
 				Response: delta.Content,
 				Thinking: thinkingText, Done: false,
 				Kind:    types.ResponseKindAssistant,
 				Context: conn.Request.Context,
+			}) {
+				return openRouterMessage{}, nil, conn.Ctx.Err()
 			}
 		}
 	}
