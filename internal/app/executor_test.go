@@ -15,6 +15,7 @@ import (
 
 	"github.com/falbanese9484/agent-harness/internal/domain"
 	"github.com/falbanese9484/agent-harness/internal/executor"
+	"github.com/falbanese9484/agent-harness/internal/provider"
 	"github.com/falbanese9484/agent-harness/internal/types"
 	"github.com/falbanese9484/agent-harness/pkg/config"
 )
@@ -95,7 +96,7 @@ func TestExecutorOllamaIsolatedToolRoundTrips(t *testing.T) {
 		SystemPrompt: config.SystemPromptConfig{Sections: []config.SystemPromptSection{{Content: []string{"original instruction"}}}},
 		Tools:        []config.ToolConfig{{Name: "read_file", Parameters: []config.ParameterConfig{{ParameterName: "path"}}}},
 	}
-	exec := NewExecutor(cfg, nil)
+	exec := NewExecutor(cfg, nil, provider.ReadOnly)
 	cfg.Provider = "changed"
 	cfg.Tools[0].Name = "changed"
 	cfg.Tools[0].Parameters[0].ParameterName = "changed"
@@ -187,7 +188,7 @@ func TestExecutorSetupFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.req.RunID, tc.req.SessionID, tc.req.Prompt, tc.req.Model = "run", "session", "hello", "model"
 			var events []domain.RunEvent
-			err := NewExecutor(tc.cfg, nil).Execute(context.Background(), tc.req, executor.Observer{Lifecycle: func(event domain.RunEvent) { events = append(events, event) }})
+			err := NewExecutor(tc.cfg, nil, provider.ReadOnly).Execute(context.Background(), tc.req, executor.Observer{Lifecycle: func(event domain.RunEvent) { events = append(events, event) }})
 			if err != executor.ErrSetup || events[len(events)-1].Error != executor.ErrSetup.Error() {
 				t.Fatalf("setup error = %v, events = %+v", err, events)
 			}
@@ -204,7 +205,7 @@ func TestExecutorOllamaFailureIsSanitized(t *testing.T) {
 	})}
 	req := domain.RunRequest{RunID: "failed", SessionID: "session", Provider: "ollama", Model: "model", Prompt: "hello", WorkspaceRoot: t.TempDir()}
 	var events []domain.RunEvent
-	err := NewExecutor(&config.AgentConfig{Provider: "ollama"}, nil).Execute(context.Background(), req, executor.Observer{
+	err := NewExecutor(&config.AgentConfig{Provider: "ollama"}, nil, provider.ReadOnly).Execute(context.Background(), req, executor.Observer{
 		Lifecycle: func(event domain.RunEvent) { events = append(events, event) },
 		Output:    func(types.ChatResponse) { t.Error("provider error leaked as output") },
 	})

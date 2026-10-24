@@ -26,19 +26,19 @@ func NewLogger() (*logger.Logger, error) {
 }
 
 func NewProvider(cfg *config.AgentConfig, log *logger.Logger, workspaceOverride string) (types.Provider, error) {
-	return newProvider(cfg, log, workspaceOverride, false)
+	return newProvider(cfg, log, workspaceOverride, false, "")
 }
 
-// worker selects verified process cleanup without changing the legacy CLI/TUI
-// platform contract. It is fixed at construction, never shared mutable policy.
-func newProvider(cfg *config.AgentConfig, log *logger.Logger, workspaceOverride string, worker bool) (types.Provider, error) {
+// worker selects the restricted profile without changing the legacy CLI/TUI
+// contract. Policy is fixed at construction, never supplied by model text.
+func newProvider(cfg *config.AgentConfig, log *logger.Logger, workspaceOverride string, worker bool, profile provider.ToolProfile) (types.Provider, error) {
 	cache := types.NewModelCache(3600)
 
 	root, err := resolveWorkspaceRoot(cfg, workspaceOverride)
 	if err != nil {
 		return nil, err
 	}
-	state, err := buildExecutionState(root, cfg, worker)
+	state, err := buildExecutionState(root, cfg, worker, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func resolveWorkspaceRoot(cfg *config.AgentConfig, override string) (string, err
 
 // buildExecutionState creates fresh tool state for each provider, including a
 // separate web service and search backend.
-func buildExecutionState(root string, cfg *config.AgentConfig, worker bool) (*provider.ExecutionState, error) {
+func buildExecutionState(root string, cfg *config.AgentConfig, worker bool, profile provider.ToolProfile) (*provider.ExecutionState, error) {
 	wc := cfg.Web
 	searcher := web.Searcher(web.NoopSearcher{})
 	switch strings.ToLower(strings.TrimSpace(wc.SearchBackend)) {
@@ -113,17 +113,17 @@ func buildExecutionState(root string, cfg *config.AgentConfig, worker bool) (*pr
 		searcher = web.NewBraveSearcher(apiKey)
 	}
 
-	construct := provider.NewExecutionState
-	if worker {
-		construct = provider.NewWorkerExecutionState
-	}
-	return construct(root, web.Config{
+	webConfig := web.Config{
 		Enabled:         wc.Enabled,
 		SearchBackend:   wc.SearchBackend,
 		DomainAllowlist: wc.DomainAllowlist,
 		MaxFetchBytes:   wc.MaxFetchBytes,
 		FetchTimeout:    wc.FetchTimeoutSeconds,
-	}, searcher)
+	}
+	if worker {
+		return provider.NewWorkerExecutionState(root, webConfig, searcher, profile, cfg.Tools)
+	}
+	return provider.NewExecutionState(root, webConfig, searcher)
 }
 
 type UnsupportedProviderError struct {
