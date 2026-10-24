@@ -9,7 +9,6 @@ import (
 	"github.com/falbanese9484/agent-harness/internal/app"
 	"github.com/falbanese9484/agent-harness/internal/chat"
 	"github.com/falbanese9484/agent-harness/internal/tui"
-	"github.com/falbanese9484/agent-harness/internal/tui/styles"
 	"github.com/falbanese9484/agent-harness/internal/types"
 	"github.com/falbanese9484/agent-harness/pkg/config"
 )
@@ -56,10 +55,6 @@ func initModel(cfg *config.AgentConfig) (tea.Model, error) {
 		Responses: responses,
 		Logger:    log,
 	})
-
-	logo := styles.Logo.Render(tui.Logo) + styles.Title.Render(tui.Tagline) + "\n" +
-		styles.Connected.Render("Connected to: ") + styles.ConnectedModel.Render(cfg.Model) + "\n\n"
-	m.SetInitialContent(logo)
 
 	return m, nil
 }

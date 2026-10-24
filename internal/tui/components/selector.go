@@ -4,7 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/falbanese9484/agent-harness/internal/tui/styles"
 	"github.com/falbanese9484/agent-harness/internal/types"
 )
 
@@ -30,13 +30,23 @@ var selectorKeys = struct {
 	Select key.Binding
 	Cancel key.Binding
 }{
-	Select: key.NewBinding(key.WithKeys("enter")),
-	Cancel: key.NewBinding(key.WithKeys("esc", "q")),
+	Select: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
+	Cancel: key.NewBinding(key.WithKeys("esc", "q", "ctrl+c"), key.WithHelp("esc", "back")),
 }
 
 func NewModelSelector(width, height int) *ModelSelector {
-	l := list.New([]list.Item{}, list.NewDefaultDelegate(), width, height)
-	l.Title = "Select a Model"
+	delegate := list.NewDefaultDelegate()
+	delegate.ShowDescription = false
+	delegate.SetSpacing(0)
+	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(styles.Accent).BorderForeground(styles.Accent)
+	l := list.New([]list.Item{}, delegate, width, height)
+	l.Title = "Switch model"
+	l.Styles.Title = styles.Logo
+	l.Styles.HelpStyle = styles.MutedText.Padding(1, 0, 0, 2)
+	l.DisableQuitKeybindings()
+	l.AdditionalShortHelpKeys = func() []key.Binding {
+		return []key.Binding{selectorKeys.Select, selectorKeys.Cancel}
+	}
 	l.SetShowHelp(true)
 
 	return &ModelSelector{
@@ -82,13 +92,16 @@ func (ms *ModelSelector) View() string {
 	if !ms.Active {
 		return ""
 	}
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(1, 2).
-		Width(ms.width)
+	return styles.SelectorBox.Width(max(1, ms.width-2)).Render(ms.List.View())
+}
 
-	return style.Render(ms.List.View())
+func (ms *ModelSelector) SetSize(width, height int) {
+	ms.width = width
+	ms.height = height
+	ms.List.SetShowStatusBar(height >= 14)
+	ms.List.SetShowPagination(height >= 14)
+	ms.List.SetShowHelp(height >= 10)
+	ms.List.SetSize(max(1, width-4), max(1, height-4))
 }
 
 func (ms *ModelSelector) Toggle() {

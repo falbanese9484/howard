@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/falbanese9484/agent-harness/internal/chat"
 	"github.com/falbanese9484/agent-harness/internal/logger"
@@ -129,14 +130,46 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) View() string {
 	if m.mode == modeModelSelect {
-		return m.selector.View()
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.selector.View())
 	}
 
-	thinking := m.renderThinkingBox()
-	if thinking != "" {
-		return fmt.Sprintf("%s\n%s\n%s", m.chatView.Viewport.View(), thinking, m.input.Textarea.View())
+	width := m.chatView.Viewport.Width
+	header := styles.Logo.Render("◆ howard") + styles.MutedText.Render("  /  ") + styles.ConnectedModel.Render(m.modelName)
+	sections := []string{
+		ansi.Truncate(header, width, "…"),
+		styles.Rule.Render(strings.Repeat("─", width)),
+		m.chatView.Viewport.View(),
 	}
-	return fmt.Sprintf("%s\n\n%s", m.chatView.Viewport.View(), m.input.Textarea.View())
+	if thinking := m.renderThinkingBox(); thinking != "" {
+		sections = append(sections, thinking)
+	}
+	sections = append(sections, m.renderInput(), m.renderFooter())
+	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, content)
+}
+
+func (m *Model) renderInput() string {
+	return styles.InputBox.Width(max(1, m.chatView.Viewport.Width-2)).Render(m.input.Textarea.View())
+}
+
+func (m *Model) renderFooter() string {
+	status := styles.ConnectedModel.Render("● ready")
+	if m.isResponding {
+		status = styles.AITool.Render("● working")
+	}
+	if m.err != nil {
+		status = styles.Error.Render("● " + m.err.Error())
+	}
+	help := styles.Key.Render("enter") + styles.MutedText.Render(" send  ") +
+		styles.Key.Render("ctrl+f") + styles.MutedText.Render(" models  ") +
+		styles.Key.Render("↑/↓") + styles.MutedText.Render(" history  ") +
+		styles.Key.Render("esc") + styles.MutedText.Render(" quit")
+	width := m.chatView.Viewport.Width
+	gap := width - lipgloss.Width(status) - lipgloss.Width(help)
+	if gap < 2 {
+		return ansi.Truncate(status+"  "+help, width, "…")
+	}
+	return status + strings.Repeat(" ", gap) + help
 }
 
 func (m *Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
@@ -174,7 +207,7 @@ func (m *Model) handleResponse(msg responseMsg) (tea.Model, tea.Cmd) {
 
 	if msg.Kind == types.ResponseKindError {
 		m.commitCurrentResponse()
-		m.chatView.Append(formatMsg("Error", strings.TrimSpace(msg.Response), styles.AITool))
+		m.chatView.Append(formatMsg("Error", strings.TrimSpace(msg.Response), styles.Error))
 		m.currentThinking = ""
 		m.isResponding = false
 		m.updateLayout()
@@ -201,7 +234,7 @@ func (m *Model) handleResponse(msg responseMsg) (tea.Model, tea.Cmd) {
 		m.currentResp += msg.Response
 		all := append(m.chatView.Messages, formatMsg(m.modelName, m.renderCurrentResponse(), styles.AI))
 		m.chatView.Viewport.SetContent(
-			lipgloss.NewStyle().Width(m.chatView.Viewport.Width).Render(strings.Join(all, "\n")),
+			lipgloss.NewStyle().Width(m.chatView.Viewport.Width).Render(strings.Join(all, "\n\n")),
 		)
 		m.chatView.Viewport.GotoBottom()
 	}
@@ -260,7 +293,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.currentThinking = ""
 		m.isResponding = true
 		m.updateLayout()
-		m.chatView.Append(styles.User.Render("You: ") + prompt)
+		m.chatView.Append(formatMsg("You", prompt, styles.User))
 		m.input.Textarea.Reset()
 		req := m.provider.GenerateRequest(prompt)
 		go m.bus.Send(req)
@@ -282,15 +315,42 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateLayout() {
-	mainWidth := m.width * 2 / 3
+	mainWidth := max(5, min(100, m.width-4))
+	widthChanged := m.chatView.Viewport.Width != mainWidth
 	m.chatView.Viewport.Width = mainWidth
-	m.input.Textarea.SetWidth(mainWidth)
+	m.input.Textarea.SetWidth(mainWidth - 4)
+	m.input.Textarea.Placeholder = ansi.Truncate("What would you like to build?", max(1, mainWidth-7), "…")
+	m.input.Textarea.SetHeight(3)
+	if m.height < 18 {
+		m.input.Textarea.SetHeight(1)
+	}
+	m.selector.SetSize(mainWidth, max(1, m.height-4))
 
-	reserved := m.input.Textarea.Height() + 4
-	if m.currentThinking != "" {
-		reserved += thinkingContentHeight + 3
+	reserved := 3 + lipgloss.Height(m.renderInput())
+	if thinking := m.renderThinkingBox(); thinking != "" {
+		reserved += lipgloss.Height(thinking)
 	}
 	m.chatView.Viewport.Height = max(1, m.height-reserved)
+	if len(m.chatView.Messages) == 0 {
+		m.chatView.Viewport.SetContent(m.welcome())
+	}
+	if widthChanged {
+		if renderer, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(max(1, mainWidth-4))); err == nil {
+			m.renderer = renderer
+		}
+	}
+}
+
+func (m *Model) welcome() string {
+	width := m.chatView.Viewport.Width
+	logo := styles.Logo.Render(strings.TrimSpace(Logo))
+	if width < 40 || m.chatView.Viewport.Height < 12 {
+		logo = styles.Logo.Render("◆ howard")
+	}
+	text := logo + "\n\n" + styles.Title.Render("A little help. A lot of possibility.") + "\n\n" +
+		styles.MutedText.Render("Explore a project, work through an idea,\nor build something new. Start with a prompt.")
+	return lipgloss.Place(width, m.chatView.Viewport.Height, lipgloss.Center, lipgloss.Center,
+		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(text))
 }
 
 func (m *Model) renderThinkingBox() string {
@@ -298,15 +358,16 @@ func (m *Model) renderThinkingBox() string {
 		return ""
 	}
 
-	width := max(20, m.chatView.Viewport.Width)
-	contentWidth := max(10, width-4)
+	width := m.chatView.Viewport.Width
+	contentWidth := max(1, width-4)
 	lines := wrapText(m.currentThinking, contentWidth)
-	if len(lines) > thinkingContentHeight {
-		lines = lines[len(lines)-thinkingContentHeight:]
+	limit := min(thinkingContentHeight, max(1, m.height/5))
+	if len(lines) > limit {
+		lines = lines[len(lines)-limit:]
 	}
 
 	body := styles.ThinkingTitle.Render("Thinking") + "\n" + strings.Join(lines, "\n")
-	return styles.ThinkingBox.Width(width - 2).Render(body)
+	return styles.ThinkingBox.Width(max(1, width-2)).Render(body)
 }
 
 func wrapText(text string, width int) []string {
@@ -346,7 +407,7 @@ func waitForResponse(ch chan *types.ChatResponse) tea.Cmd {
 
 func formatMsg(sender, content string, style lipgloss.Style) string {
 	ts := time.Now().Format("15:04")
-	return style.Render(fmt.Sprintf("[%s] %s:", ts, sender)) + " " + content
+	return style.Render(sender) + styles.MutedText.Render("  "+ts) + "\n" + content
 }
 
 func (m *Model) SetInitialContent(content string) {

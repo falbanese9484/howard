@@ -19,7 +19,7 @@ The TUI is built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) a
 5. Response chunks are rendered through Glamour as markdown. Tool status messages are committed into the transcript separately.
 
 ## Modes
-- Chat mode is the default. The view shows the transcript, optional thinking box, and prompt input.
+- Chat mode is the default. The view shows a model header, transcript, optional thinking box, framed prompt input, and a status/keybinding bar. An empty conversation displays a welcome screen.
 - Model selection mode is entered with `Ctrl+F`. It temporarily replaces the chat view with a selectable list of provider models.
 
 ## Keybindings
@@ -30,6 +30,6 @@ The TUI is built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) a
 - `exit`: typed as a prompt, quits the TUI
 
 ## Layout Notes
-The main content width is two thirds of the terminal width. `updateLayout` recalculates viewport and input dimensions on resize and reserves extra vertical space when the thinking box is visible.
+The main content is centered, uses the available terminal width with a small gutter, and caps at 100 columns. `updateLayout` recalculates viewport, input, and picker dimensions on resize and reserves the rendered height of the header, footer, prompt, and thinking box. Short terminals use a single-line prompt. Shared adaptive colors support light and dark terminal backgrounds.
 
 Keep layout changes centralized there when possible; it makes resize behavior easier to reason about.

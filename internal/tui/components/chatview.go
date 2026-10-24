@@ -22,7 +22,7 @@ func NewChatView(width, height int) *ChatView {
 func (c *ChatView) Render() {
 	content := lipgloss.NewStyle().
 		Width(c.Viewport.Width).
-		Render(strings.Join(c.Messages, "\n"))
+		Render(strings.Join(c.Messages, "\n\n"))
 	c.Viewport.SetContent(content)
 	c.Viewport.GotoBottom()
 }

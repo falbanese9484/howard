@@ -2,41 +2,26 @@ package styles
 
 import "github.com/charmbracelet/lipgloss"
 
+// Adaptive colors keep the chrome legible on both light and dark terminals.
 var (
-	User = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("10")).
-		Bold(true)
+	Accent = lipgloss.AdaptiveColor{Light: "#087F8C", Dark: "#78DCCA"}
+	Muted  = lipgloss.AdaptiveColor{Light: "#657482", Dark: "#8995A7"}
+	Border = lipgloss.AdaptiveColor{Light: "#C4CDD5", Dark: "#384454"}
+	Warm   = lipgloss.AdaptiveColor{Light: "#946200", Dark: "#E5BE78"}
 
-	AI = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("12")).
-		Bold(true)
-
-	AITool = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("220")).
-		Bold(true)
-
-	Connected = lipgloss.NewStyle().
-			Italic(true).
-			Foreground(lipgloss.Color("241"))
-
-	ConnectedModel = Connected.
-			Foreground(lipgloss.Color("75"))
-
-	Logo = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("75")).
-		Bold(true)
-
-	Title = lipgloss.NewStyle().
-		Bold(true).
-		Padding(2)
-
-	ThinkingTitle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("228")).
-			Bold(true)
-
-	ThinkingBox = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244")).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Padding(0, 1)
+	User           = lipgloss.NewStyle().Foreground(Accent).Bold(true)
+	AI             = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#5264A4", Dark: "#ADBDF5"}).Bold(true)
+	AITool         = lipgloss.NewStyle().Foreground(Warm)
+	Error          = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#B73848", Dark: "#F0929C"})
+	MutedText      = lipgloss.NewStyle().Foreground(Muted)
+	Connected      = MutedText
+	ConnectedModel = lipgloss.NewStyle().Foreground(Accent)
+	Logo           = lipgloss.NewStyle().Foreground(Accent).Bold(true)
+	Title          = lipgloss.NewStyle().Bold(true)
+	Key            = lipgloss.NewStyle().Foreground(Accent)
+	Rule           = lipgloss.NewStyle().Foreground(Border)
+	InputBox       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(Accent).Padding(0, 1)
+	ThinkingTitle  = lipgloss.NewStyle().Foreground(Warm).Bold(true)
+	ThinkingBox    = MutedText.Border(lipgloss.RoundedBorder()).BorderForeground(Border).Padding(0, 1)
+	SelectorBox    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(Border).Padding(1, 1)
 )
