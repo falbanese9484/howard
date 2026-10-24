@@ -33,15 +33,15 @@ func TestExecutionStatesIsolateToolsConcurrently(t *testing.T) {
 			for n := range 10 {
 				path := fmt.Sprintf("nested/%d.txt", n)
 				content := fmt.Sprintf("worker-%d", i)
-				if _, err := state.executeToolCall(toolCall("write_file", map[string]any{"path": path, "content": content})); err != nil {
+				if _, err := state.executeToolCall(context.Background(), toolCall("write_file", map[string]any{"path": path, "content": content})); err != nil {
 					t.Error(err)
 					return
 				}
-				if _, err := state.executeToolCall(toolCall("edit_file", map[string]any{"path": path, "old_text": content, "new_text": content + " edited"})); err != nil {
+				if _, err := state.executeToolCall(context.Background(), toolCall("edit_file", map[string]any{"path": path, "old_text": content, "new_text": content + " edited"})); err != nil {
 					t.Error(err)
 					return
 				}
-				out, err := state.executeToolCall(toolCall("read_file", map[string]any{"path": path}))
+				out, err := state.executeToolCall(context.Background(), toolCall("read_file", map[string]any{"path": path}))
 				if err != nil || out != content+" edited" {
 					t.Errorf("worker %d read = %q, %v", i, out, err)
 				}
@@ -56,17 +56,17 @@ func TestExecutionStatesIsolateToolsConcurrently(t *testing.T) {
 		}
 		for _, path := range []string{filepath.Join(other.root, "nested/0.txt"), "../outside.txt", "escape/nested/0.txt"} {
 			for _, name := range []string{"ls", "read_file", "edit_file", "write_file", "mkdir"} {
-				_, err := state.executeToolCall(toolCall(name, map[string]any{"path": path, "content": "bad", "old_text": "worker", "new_text": "bad"}))
+				_, err := state.executeToolCall(context.Background(), toolCall(name, map[string]any{"path": path, "content": "bad", "old_text": "worker", "new_text": "bad"}))
 				if err == nil {
 					t.Errorf("%s allowed escape %q", name, path)
 				}
 			}
 		}
-		out, err := state.executeToolCall(toolCall("bash", map[string]any{"command": "pwd -P"}))
+		out, err := state.executeToolCall(context.Background(), toolCall("bash", map[string]any{"command": "pwd -P"}))
 		if err != nil || strings.TrimSpace(out) != state.root {
 			t.Errorf("bash cwd = %q, %v; want %q", out, err, state.root)
 		}
-		out, err = state.executeToolCall(toolCall("ls", map[string]any{"path": "nested"}))
+		out, err = state.executeToolCall(context.Background(), toolCall("ls", map[string]any{"path": "nested"}))
 		if err != nil || !strings.Contains(out, "0.txt") {
 			t.Errorf("ls = %q, %v", out, err)
 		}
@@ -90,11 +90,11 @@ func TestExecutionStatesOwnWebConfiguration(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			call := toolCall("web_search", map[string]any{"query": "test"})
-			out, err := a.executeToolCall(call)
+			out, err := a.executeToolCall(context.Background(), call)
 			if err != nil || !strings.Contains(out, "worker A") {
 				t.Errorf("enabled search = %q, %v", out, err)
 			}
-			if _, err := b.executeToolCall(call); !errors.Is(err, web.ErrDisabled) {
+			if _, err := b.executeToolCall(context.Background(), call); !errors.Is(err, web.ErrDisabled) {
 				t.Errorf("disabled search = %v", err)
 			}
 			if err := a.web.AuthorizeHost(context.Background(), "allowed.example", "test"); err != nil {
@@ -122,7 +122,7 @@ func TestExecutionStateRejectsInvalidRoots(t *testing.T) {
 		}
 	}
 	var state *ExecutionState
-	if _, err := state.executeToolCall(toolCall("bash", map[string]any{"command": "true"})); err == nil {
+	if _, err := state.executeToolCall(context.Background(), toolCall("bash", map[string]any{"command": "true"})); err == nil {
 		t.Fatal("nil execution state dispatched a tool")
 	}
 }

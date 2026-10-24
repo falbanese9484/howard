@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -22,8 +21,9 @@ const bashTimeout = 60 * time.Second
 // ExecutionState owns a worker's fixed workspace and web service. Construct one
 // per provider/conversation; file checks are not an OS or shell sandbox.
 type ExecutionState struct {
-	root string
-	web  *web.Service
+	root   string
+	web    *web.Service
+	worker bool
 }
 
 // NewExecutionState resolves the workspace once, independently of later CWD
@@ -50,7 +50,21 @@ func NewExecutionState(root string, cfg web.Config, searcher web.Searcher) (*Exe
 	return &ExecutionState{root: abs, web: web.NewService(cfg, searcher)}, nil
 }
 
-func (s *ExecutionState) executeToolCall(call types.ToolCall) (string, error) {
+// NewWorkerExecutionState requires verified process-group cleanup for bash.
+// Unlike legacy CLI/TUI state, workers fail closed on unsupported platforms.
+func NewWorkerExecutionState(root string, cfg web.Config, searcher web.Searcher) (*ExecutionState, error) {
+	state, err := NewExecutionState(root, cfg, searcher)
+	if err != nil {
+		return nil, err
+	}
+	state.worker = true
+	return state, nil
+}
+
+func (s *ExecutionState) executeToolCall(ctx context.Context, call types.ToolCall) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if _, err := s.findProjectRoot(); err != nil {
 		return "", err
 	}
@@ -66,11 +80,11 @@ func (s *ExecutionState) executeToolCall(call types.ToolCall) (string, error) {
 	case "mkdir":
 		return s.executeMkdir(call.Function.Arguments)
 	case "bash":
-		return s.executeBash(call.Function.Arguments)
+		return s.executeBash(ctx, call.Function.Arguments)
 	case "web_search":
-		return s.executeWebSearch(call.Function.Arguments)
+		return s.executeWebSearch(ctx, call.Function.Arguments)
 	case "fetch_url":
-		return s.executeFetchURL(call.Function.Arguments)
+		return s.executeFetchURL(ctx, call.Function.Arguments)
 	default:
 		return "", fmt.Errorf("unknown tool: %s", call.Function.Name)
 	}
@@ -199,7 +213,7 @@ func (s *ExecutionState) executeWriteFile(args map[string]any) (string, error) {
 	return fmt.Sprintf("created file %s", path), nil
 }
 
-func (s *ExecutionState) executeBash(args map[string]any) (string, error) {
+func (s *ExecutionState) executeBash(ctx context.Context, args map[string]any) (string, error) {
 	// TODO:Consider implementing a more structured command execution, rather than raw bash,
 	// to improve security and reliability. i
 	// For example, we could support a limited set of commands with structured arguments.
@@ -213,17 +227,16 @@ func (s *ExecutionState) executeBash(args map[string]any) (string, error) {
 		return "", err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), bashTimeout)
+	ctx, cancel := context.WithTimeout(ctx, bashTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "bash", "-c", command)
-	// TODO(review): CommandContext SIGKILLs only the direct child; spawned grandchildren
-	// leak on timeout. Use a process group / cmd.Cancel to kill the tree. See notes/review-checklist.md.
-	cmd.Dir = root
-	outputBytes, err := cmd.CombinedOutput()
+	outputBytes, err := runBash(ctx, root, command, s.worker)
 	output := string(outputBytes)
+	if ctx.Err() == context.Canceled {
+		return output, context.Canceled
+	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return output, fmt.Errorf("command timed out after %s; output: %s", bashTimeout, output)
+		return output, fmt.Errorf("command timed out: %w; output: %s", ctx.Err(), output)
 	}
 	if err != nil {
 		return output, fmt.Errorf("command failed: %w; output: %s", err, output)

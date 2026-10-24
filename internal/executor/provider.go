@@ -23,7 +23,10 @@ func NewProviderTurn(provider Provider) Turn {
 }
 
 func (t *providerTurn) Run(ctx context.Context, prompt string, output func(types.ChatResponse)) error {
-	if ctx.Err() != nil || t.provider == nil {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if t.provider == nil {
 		return ErrProvider
 	}
 	request := t.provider.GenerateRequest(prompt)
@@ -44,7 +47,7 @@ func (t *providerTurn) Run(ctx context.Context, prompt string, output func(types
 
 	var completed, failed bool
 	deliver := func(response *types.ChatResponse) {
-		if response == nil {
+		if response == nil || ctx.Err() != nil {
 			return
 		}
 		if response.Kind == types.ResponseKindError {
@@ -69,6 +72,9 @@ func (t *providerTurn) Run(ctx context.Context, prompt string, output func(types
 			failed = failed || len(failures) > 0
 			for len(done) > 0 {
 				completed = <-done || completed
+			}
+			if err := ctx.Err(); err != nil {
+				return err
 			}
 			if failed || !completed {
 				return ErrProvider

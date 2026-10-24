@@ -1,5 +1,6 @@
 // Package executor owns the lifecycle of one in-process turn. It does not store
-// sessions, persist events, or guarantee in-flight cancellation.
+// sessions or persist events. Cancellation is cooperative and terminal events
+// are emitted only after the turn has stopped.
 package executor
 
 import (
@@ -17,7 +18,6 @@ var (
 	ErrRunActive      = errors.New("run ID already active")
 	ErrSetup          = errors.New("execution setup failed")
 	ErrProvider       = errors.New("provider execution failed")
-	ErrNotStarted     = errors.New("execution canceled before start")
 )
 
 // Turn executes one prompt and returns only after all work and output have
@@ -32,7 +32,9 @@ type Turn interface {
 type Factory func(domain.RunRequest) (Turn, error)
 
 // Observer callbacks are synchronous and scoped to this Execute call. They must
-// return promptly and must not panic. Different runs may call observers concurrently.
+// return promptly and must not panic. A callback forwarding to a channel must
+// select on the run context so a stopped consumer cannot block it. Different runs
+// may call observers concurrently.
 // Output contains provider text/tool status, never lifecycle or failure metadata.
 type Observer struct {
 	Lifecycle func(domain.RunEvent)
@@ -102,30 +104,43 @@ func (e *Executor) Execute(ctx context.Context, request domain.RunRequest, obser
 		emit(domain.RunFailed, err)
 		return err
 	}
+	canceled := func() error {
+		emit(domain.RunCanceled, nil)
+		return ctx.Err()
+	}
 	emit(domain.RunQueued, nil)
 	if ctx.Err() != nil {
-		return fail(ErrNotStarted)
+		return canceled()
 	}
 	if e.factory == nil {
 		return fail(ErrSetup)
 	}
 	turn, err := e.factory(request)
+	if ctx.Err() != nil {
+		return canceled()
+	}
 	if err != nil || turn == nil {
 		return fail(ErrSetup)
 	}
-	if ctx.Err() != nil {
-		return fail(ErrNotStarted)
-	}
 	emit(domain.RunRunning, nil)
-	output := observer.Output
-	if output == nil {
-		output = func(types.ChatResponse) {}
+	if ctx.Err() != nil {
+		return canceled()
 	}
-	if err := turn.Run(ctx, request.Prompt, output); err != nil {
+	output := func(response types.ChatResponse) {
+		if ctx.Err() == nil && observer.Output != nil {
+			observer.Output(response)
+		}
+	}
+	err = turn.Run(ctx, request.Prompt, output)
+	// This is the sole terminal decision point for a started run. Run must have
+	// joined all execution before returning. Cancellation observed here wins;
+	// a cancellation after this decision cannot rewrite a completed outcome.
+	if ctx.Err() != nil {
+		return canceled()
+	}
+	if err != nil {
 		return fail(ErrProvider)
 	}
-	// A cancellation request alone is not an outcome. The turn's actual result
-	// wins; reliable end-to-end cancellation is a subsequent slice.
 	emit(domain.RunSucceeded, nil)
 	return nil
 }
