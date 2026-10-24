@@ -16,8 +16,8 @@ const (
 	webToolTimeout      = 45 * time.Second
 )
 
-func executeWebSearch(args map[string]any) (string, error) {
-	svc := currentWebService()
+func (s *ExecutionState) executeWebSearch(args map[string]any) (string, error) {
+	svc := s.web
 	if svc == nil || !svc.Enabled() {
 		return "", web.ErrDisabled
 	}
@@ -49,8 +49,8 @@ func executeWebSearch(args map[string]any) (string, error) {
 	return b.String(), nil
 }
 
-func executeFetchURL(args map[string]any) (string, error) {
-	svc := currentWebService()
+func (s *ExecutionState) executeFetchURL(args map[string]any) (string, error) {
+	svc := s.web
 	if svc == nil || !svc.Enabled() {
 		return "", web.ErrDisabled
 	}

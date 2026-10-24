@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/falbanese9484/agent-harness/internal/types"
@@ -20,75 +19,66 @@ import (
 
 const bashTimeout = 60 * time.Second
 
-// webServiceMu guards the package-level web service handle. The service is
-// optional: tools that need it return a clear error when it is unset.
-var (
-	webServiceMu sync.RWMutex
-	webService   *web.Service
-)
-
-// workspaceRootMu guards the package-level sandbox root used by file tools.
-// When unset, file tools fall back to the current working directory.
-var (
-	workspaceRootMu sync.RWMutex
-	workspaceRoot   string
-)
-
-// SetWorkspaceRoot sets the sandbox root for file tools. The path must be
-// absolute and symlink-resolved by the caller (see app.NewProvider). Passing an
-// empty string resets to current-working-directory behavior.
-func SetWorkspaceRoot(root string) {
-	workspaceRootMu.Lock()
-	defer workspaceRootMu.Unlock()
-	workspaceRoot = root
+// ExecutionState owns a worker's fixed workspace and web service. Construct one
+// per provider/conversation; file checks are not an OS or shell sandbox.
+type ExecutionState struct {
+	root string
+	web  *web.Service
 }
 
-func currentWorkspaceRoot() string {
-	workspaceRootMu.RLock()
-	defer workspaceRootMu.RUnlock()
-	return workspaceRoot
+// NewExecutionState resolves the workspace once, independently of later CWD
+// changes. The searcher must be safe for concurrent use if explicitly shared.
+func NewExecutionState(root string, cfg web.Config, searcher web.Searcher) (*ExecutionState, error) {
+	if root == "" {
+		return nil, fmt.Errorf("workspace root is required")
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("workspace root is not a directory: %s", abs)
+	}
+	return &ExecutionState{root: abs, web: web.NewService(cfg, searcher)}, nil
 }
 
-// SetWebService installs the active web.Service used by web_search and
-// fetch_url. Pass nil to disable web tooling.
-func SetWebService(s *web.Service) {
-	webServiceMu.Lock()
-	defer webServiceMu.Unlock()
-	webService = s
-}
-
-func currentWebService() *web.Service {
-	webServiceMu.RLock()
-	defer webServiceMu.RUnlock()
-	return webService
-}
-
-func executeToolCall(call types.ToolCall) (string, error) {
+func (s *ExecutionState) executeToolCall(call types.ToolCall) (string, error) {
+	if _, err := s.findProjectRoot(); err != nil {
+		return "", err
+	}
 	switch call.Function.Name {
 	case "ls":
-		return executeLS(call.Function.Arguments)
+		return s.executeLS(call.Function.Arguments)
 	case "read_file":
-		return executeReadFile(call.Function.Arguments)
+		return s.executeReadFile(call.Function.Arguments)
 	case "edit_file":
-		return executeEditFile(call.Function.Arguments)
+		return s.executeEditFile(call.Function.Arguments)
 	case "write_file":
-		return executeWriteFile(call.Function.Arguments)
+		return s.executeWriteFile(call.Function.Arguments)
 	case "mkdir":
-		return executeMkdir(call.Function.Arguments)
+		return s.executeMkdir(call.Function.Arguments)
 	case "bash":
-		return executeBash(call.Function.Arguments)
+		return s.executeBash(call.Function.Arguments)
 	case "web_search":
-		return executeWebSearch(call.Function.Arguments)
+		return s.executeWebSearch(call.Function.Arguments)
 	case "fetch_url":
-		return executeFetchURL(call.Function.Arguments)
+		return s.executeFetchURL(call.Function.Arguments)
 	default:
 		return "", fmt.Errorf("unknown tool: %s", call.Function.Name)
 	}
 }
 
-func executeLS(args map[string]any) (string, error) {
+func (s *ExecutionState) executeLS(args map[string]any) (string, error) {
 	path := stringArg(args, "path", ".")
-	abs, err := resolveProjectPath(path, true)
+	abs, err := s.resolveProjectPath(path, true)
 	if err != nil {
 		return "", err
 	}
@@ -114,13 +104,13 @@ func executeLS(args map[string]any) (string, error) {
 	return b.String(), nil
 }
 
-func executeReadFile(args map[string]any) (string, error) {
+func (s *ExecutionState) executeReadFile(args map[string]any) (string, error) {
 	path := stringArg(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
 
-	abs, err := resolveProjectPath(path, true)
+	abs, err := s.resolveProjectPath(path, true)
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +130,7 @@ func executeReadFile(args map[string]any) (string, error) {
 	return string(data), nil
 }
 
-func executeEditFile(args map[string]any) (string, error) {
+func (s *ExecutionState) executeEditFile(args map[string]any) (string, error) {
 	// We implement edit_file as a find-and-replace, to avoid the complexity of merging concurrent edits.
 	path := stringArg(args, "path", "")
 	oldText := stringArg(args, "old_text", "")
@@ -152,7 +142,7 @@ func executeEditFile(args map[string]any) (string, error) {
 		return "", fmt.Errorf("old_text is required")
 	}
 
-	abs, err := resolveProjectPath(path, true)
+	abs, err := s.resolveProjectPath(path, true)
 	if err != nil {
 		return "", err
 	}
@@ -181,7 +171,7 @@ func executeEditFile(args map[string]any) (string, error) {
 	return fmt.Sprintf("edited %s", path), nil
 }
 
-func executeWriteFile(args map[string]any) (string, error) {
+func (s *ExecutionState) executeWriteFile(args map[string]any) (string, error) {
 	// write_file creates a new file with the specified content. It fails if the file already exists.
 	path := stringArg(args, "path", "")
 	content := stringArg(args, "content", "")
@@ -189,7 +179,7 @@ func executeWriteFile(args map[string]any) (string, error) {
 		return "", fmt.Errorf("path is required")
 	}
 
-	abs, err := resolveNewProjectPath(path)
+	abs, err := s.resolveNewProjectPath(path)
 	if err != nil {
 		return "", err
 	}
@@ -209,7 +199,7 @@ func executeWriteFile(args map[string]any) (string, error) {
 	return fmt.Sprintf("created file %s", path), nil
 }
 
-func executeBash(args map[string]any) (string, error) {
+func (s *ExecutionState) executeBash(args map[string]any) (string, error) {
 	// TODO:Consider implementing a more structured command execution, rather than raw bash,
 	// to improve security and reliability. i
 	// For example, we could support a limited set of commands with structured arguments.
@@ -218,7 +208,7 @@ func executeBash(args map[string]any) (string, error) {
 		return "", fmt.Errorf("command is required")
 	}
 
-	root, err := findProjectRoot()
+	root, err := s.findProjectRoot()
 	if err != nil {
 		return "", err
 	}
@@ -244,13 +234,13 @@ func executeBash(args map[string]any) (string, error) {
 	return output, nil
 }
 
-func executeMkdir(args map[string]any) (string, error) {
+func (s *ExecutionState) executeMkdir(args map[string]any) (string, error) {
 	path := stringArg(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
 
-	abs, err := resolveNewProjectPath(path)
+	abs, err := s.resolveNewProjectPath(path)
 	if err != nil {
 		return "", err
 	}
@@ -267,8 +257,8 @@ func stringArg(args map[string]any, name, fallback string) string {
 	return fallback
 }
 
-func resolveProjectPath(path string, mustExist bool) (string, error) {
-	root, err := findProjectRoot()
+func (s *ExecutionState) resolveProjectPath(path string, mustExist bool) (string, error) {
+	root, err := s.findProjectRoot()
 	if err != nil {
 		return "", err
 	}
@@ -289,14 +279,14 @@ func resolveProjectPath(path string, mustExist bool) (string, error) {
 		}
 	}
 
-	if abs != root && !strings.HasPrefix(abs, root+string(os.PathSeparator)) {
+	if !isProjectPath(root, abs) {
 		return "", fmt.Errorf("path outside project root is not allowed: %s", path)
 	}
 	return abs, nil
 }
 
-func resolveNewProjectPath(path string) (string, error) {
-	root, err := findProjectRoot()
+func (s *ExecutionState) resolveNewProjectPath(path string) (string, error) {
+	root, err := s.findProjectRoot()
 	if err != nil {
 		return "", err
 	}
@@ -347,20 +337,13 @@ func resolveNewProjectPath(path string) (string, error) {
 }
 
 func isProjectPath(root, path string) bool {
-	return path == root || strings.HasPrefix(path, root+string(os.PathSeparator))
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
 }
 
-func findProjectRoot() (string, error) {
-	// The sandbox root defaults to the current working directory so file tools
-	// work in any project, Go or otherwise. Callers can override it via
-	// SetWorkspaceRoot (wired from config/flag in app.NewProvider).
-	if root := currentWorkspaceRoot(); root != "" {
-		return root, nil
+func (s *ExecutionState) findProjectRoot() (string, error) {
+	if s == nil || s.root == "" {
+		return "", fmt.Errorf("execution state is required")
 	}
-
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	return filepath.EvalSymlinks(dir)
+	return s.root, nil
 }

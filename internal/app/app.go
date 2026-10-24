@@ -32,15 +32,16 @@ func NewProvider(cfg *config.AgentConfig, log *logger.Logger, workspaceOverride 
 	if err != nil {
 		return nil, err
 	}
-	provider.SetWorkspaceRoot(root)
-
-	provider.SetWebService(buildWebService(cfg))
+	state, err := buildExecutionState(root, cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	switch cfg.Provider {
 	case "ollama":
-		return provider.NewOllama(log, cfg, cache), nil
+		return provider.NewOllama(log, cfg, cache, state), nil
 	case "openrouter":
-		return provider.NewOpenRouter(log, cfg, cache)
+		return provider.NewOpenRouter(log, cfg, cache, state)
 	default:
 		return nil, &UnsupportedProviderError{Provider: cfg.Provider}
 	}
@@ -90,10 +91,9 @@ func resolveWorkspaceRoot(cfg *config.AgentConfig, override string) (string, err
 	return resolved, nil
 }
 
-// buildWebService translates config.WebConfig into a runtime web.Service.
-// When web access is disabled the returned service still answers Enabled()
-// as false, which causes the web tools to refuse with a clear error.
-func buildWebService(cfg *config.AgentConfig) *web.Service {
+// buildExecutionState creates fresh tool state for each provider, including a
+// separate web service and search backend.
+func buildExecutionState(root string, cfg *config.AgentConfig) (*provider.ExecutionState, error) {
 	wc := cfg.Web
 	searcher := web.Searcher(web.NoopSearcher{})
 	switch strings.ToLower(strings.TrimSpace(wc.SearchBackend)) {
@@ -107,14 +107,13 @@ func buildWebService(cfg *config.AgentConfig) *web.Service {
 		searcher = web.NewBraveSearcher(apiKey)
 	}
 
-	svc := web.NewService(web.Config{
+	return provider.NewExecutionState(root, web.Config{
 		Enabled:         wc.Enabled,
 		SearchBackend:   wc.SearchBackend,
 		DomainAllowlist: wc.DomainAllowlist,
 		MaxFetchBytes:   wc.MaxFetchBytes,
 		FetchTimeout:    wc.FetchTimeoutSeconds,
 	}, searcher)
-	return svc
 }
 
 type UnsupportedProviderError struct {

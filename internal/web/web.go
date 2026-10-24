@@ -58,6 +58,7 @@ type Service struct {
 // confirmation callback; callers should attach one with SetConfirm if they
 // want to allow interactive overrides for unknown domains.
 func NewService(cfg Config, searcher Searcher) *Service {
+	cfg.DomainAllowlist = append([]string(nil), cfg.DomainAllowlist...)
 	return &Service{
 		cfg:      cfg,
 		sandbox:  NewSandbox(cfg.DomainAllowlist),
@@ -140,7 +141,9 @@ func (s *Service) Config() Config {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.cfg
+	cfg := s.cfg
+	cfg.DomainAllowlist = append([]string(nil), cfg.DomainAllowlist...)
+	return cfg
 }
 
 // ErrDisabled is returned when web tools are invoked while disabled.
