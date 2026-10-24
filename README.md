@@ -119,5 +119,23 @@ Separate worker objects do not isolate processes or two workers deliberately
 configured to use the same files. Lifecycle execution, cancellation, restricted
 tool policy, and durable sessions are subsequent slices.
 
+### In-process lifecycle executor
+
+`app.NewExecutor(cfg, log)` exposes a synchronous internal
+`Execute(ctx, domain.RunRequest, executor.Observer)` entry point. It constructs
+fresh provider/tool state per run and emits ordered lifecycle events separately
+from assistant/tool output. Active RunIDs are unique within that executor;
+`SessionID` correlates events but does not restore conversation history.
+
+Accepted turns emit `queued`, `running`, and one `succeeded`/`failed` outcome;
+setup failure may fail directly from `queued`. Invalid, already-canceled, and
+duplicate-active requests are rejected before acceptance. Exported failures use
+fixed sanitized messages. The adapter waits for provider return and pending
+output before finalizing. Callbacks must return promptly.
+
+This entry point does not replace the CLI/TUI or guarantee in-flight cancellation;
+it never emits `canceled`. See [the run contract](notes/run-contract.md) for
+ownership, context, failure and rollback semantics.
+
 ## License
 MIT
