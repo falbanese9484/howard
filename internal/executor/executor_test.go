@@ -233,7 +233,7 @@ func (p fakeProvider) GenerateRequest(prompt string) *types.ChatRequest {
 }
 func (p fakeProvider) Chat(conn *types.BusConnector) { p.chat(conn) }
 
-func TestProviderAdapterDrainsAndWaitsForReturn(t *testing.T) {
+func TestProviderAdapterDeliversOutputAndWaitsForReturn(t *testing.T) {
 	for _, outcome := range []string{"done", "error", "missing", "output error"} {
 		t.Run(outcome, func(t *testing.T) {
 			req := request(t)
@@ -257,7 +257,7 @@ func TestProviderAdapterDrainsAndWaitsForReturn(t *testing.T) {
 					}
 					close(signaled)
 					<-release
-					// More output than the channel buffer, including after completion signal.
+					// All output must be delivered, even after a completion signal.
 					for i := 0; i < 40; i++ {
 						conn.ResponseChan <- &types.ChatResponse{Kind: types.ResponseKindAssistant, Response: "x"}
 					}

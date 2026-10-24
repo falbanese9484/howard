@@ -30,7 +30,7 @@ func (t *providerTurn) Run(ctx context.Context, prompt string, output func(types
 	if request == nil {
 		return ErrProvider
 	}
-	content := make(chan *types.ChatResponse, 16)
+	content := make(chan *types.ChatResponse)
 	failures := make(chan error, 1)
 	done := make(chan bool, 1)
 	returned := make(chan struct{})
@@ -64,11 +64,8 @@ func (t *providerTurn) Run(ctx context.Context, prompt string, output func(types
 		case success := <-done:
 			completed = completed || success
 		case <-returned:
-			// Chat is now stopped, so these queues have no remaining producers.
-			// A done/error send can precede both pending content and Chat return.
-			for len(content) > 0 {
-				deliver(<-content)
-			}
+			// Unbuffered content has already been delivered. Chat is now stopped,
+			// so only buffered completion/error signals may remain.
 			failed = failed || len(failures) > 0
 			for len(done) > 0 {
 				completed = <-done || completed
