@@ -349,8 +349,16 @@ func (m *Model) welcome() string {
 	}
 	text := logo + "\n\n" + styles.Title.Render("A little help. A lot of possibility.") + "\n\n" +
 		styles.MutedText.Render("Explore a project, work through an idea,\nor build something new. Start with a prompt.")
+	style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center)
+	rendered := style.Render(text)
+	if lipgloss.Height(rendered) > m.chatView.Viewport.Height {
+		rendered = style.Render(styles.Logo.Render("◆ howard") + "\n\n" + styles.MutedText.Render("Start with a prompt."))
+	}
+	if lipgloss.Height(rendered) > m.chatView.Viewport.Height {
+		rendered = style.Render(styles.MutedText.Render(ansi.Truncate("Start with a prompt.", width, "…")))
+	}
 	return lipgloss.Place(width, m.chatView.Viewport.Height, lipgloss.Center, lipgloss.Center,
-		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(text))
+		rendered)
 }
 
 func (m *Model) renderThinkingBox() string {

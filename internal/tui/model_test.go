@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/falbanese9484/agent-harness/internal/types"
 )
 
@@ -16,6 +18,28 @@ func TestUpdateKeepsTypedRunesOutOfHistoryNavigation(t *testing.T) {
 
 	if got := model.input.Textarea.Value(); got != "a" {
 		t.Fatalf("textarea value = %q, want %q", got, "a")
+	}
+}
+
+func TestWelcomeFitsViewport(t *testing.T) {
+	model := New(Config{Width: 80, Height: 24})
+	for _, size := range []struct{ width, height int }{
+		{76, 16}, {28, 12}, {28, 6}, {28, 3}, {12, 3}, {5, 1},
+	} {
+		model.chatView.Viewport.Width = size.width
+		model.chatView.Viewport.Height = size.height
+		welcome := model.welcome()
+		if width, height := lipgloss.Size(welcome); width > size.width || height > size.height {
+			t.Errorf("welcome at %dx%d is %dx%d", size.width, size.height, width, height)
+		}
+		plain := ansi.Strip(welcome)
+		if size.height >= 12 {
+			if !strings.Contains(plain, "A little help.") || !strings.Contains(plain, "Explore a project,") {
+				t.Errorf("full welcome missing at %dx%d: %q", size.width, size.height, plain)
+			}
+		} else if size.width >= 28 && !strings.Contains(plain, "Start with a prompt.") {
+			t.Errorf("compact welcome missing at %dx%d: %q", size.width, size.height, plain)
+		}
 	}
 }
 
