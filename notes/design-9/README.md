@@ -32,7 +32,7 @@ requires agreement on this vocabulary, not two competing request contracts.
 | audience_ref | Verified private output destination for the same requester |
 | RunID | Client idempotency key unique within owner scope, including completed runs |
 
-## Decision: one internal caller first
+## Decision: one internal caller as a foundation test
 
 Select one opaque bearer service credential over TLS for the first internal caller,
 resolved by a server-side credential reference to one service principal. This is
@@ -43,7 +43,7 @@ unrecognized/expired/revoked credentials, bound request sizes and rate-limit fai
 auth; authenticated network access alone grants no tools/data. TLS termination,
 secret storage/rotation and trusted proxy configuration require separate review.
 
-For the first synthetic pilot, the authenticated service maps to one fixed synthetic
+For the first foundation fixture (not the enterprise MVP), the authenticated service maps to one fixed synthetic
 requester/agent/tenant, workspace and private audience. Caller body/header claims
 of human identity are rejected; prompts are untrusted data. Multi-human traffic is
 denied until a company-approved identity-link adapter can verify channel identity
@@ -56,12 +56,15 @@ an issuer-verified tenant/requester/binding ID, verified_at, expires_at and revo
 version; `Authorize(binding, agent, action, canonical_resource, audience)` returns
 allow/deny plus decision/version/freshness bounds. Authenticity, service delegation
 scope, subject correlation and revocation semantics require the company's contract.
-No adapter implementation or fallback local role directory is proposed.
+PostgreSQL owns platform users, role/permission records and interface identity
+bindings. How authoritative company roles are mapped/synchronized into these records
+is an integration gate; there is no permissive fallback role directory. Prefer
+existing company SSO/MFA for verification, not a new OTP system.
 
 ## Enforcement and information flow
 
 At admission and again immediately before each tool dispatch, evaluate current
-requester rights intersected with agent ceiling, workspace/resource constraints
+role-derived requester permissions intersected with agent ceiling, workspace/resource constraints
 and current context/audience policy. Resolve workspace/profile/model from an
 allowlist owned by the service; never accept an absolute path or model-selected
 profile. Canonicalize resource identifiers before authorization; reject unsupported
@@ -84,8 +87,9 @@ the value); expiry/revocation requires re-verification. It never grants action
 approval. A future high-impact action would additionally require a single-use,
 expiring approval bound to owner, agent, run, canonical action/resource and exact
 parameter digest; changed inputs invalidate approval. Recheck policy and consume
-approval atomically with intent authorization. Writes remain disabled here even
-with such an approval. Verification/OTP challenges belong in a dedicated trusted
+approval atomically with intent authorization. Worker writes remain disabled here even
+with such an approval. Admin configuration CRUD is a separately authorized control
+plane operation, never a worker tool permission. Verification/OTP challenges belong in a dedicated trusted
 surface; never in prompts, tool transcripts or logs.
 
 Revocation or policy unavailability denies new dispatches, context reads and output,
@@ -149,18 +153,79 @@ reference in general logs; protected content records use separate access/retenti
 Use keyed digests where correlation is needed, not public hashes of sensitive text.
 Audit access itself is authorized. #12 governs export; #11 governs provider work.
 
+## Clarified MVP and management boundary
+
+The MVP is a durable central agent with essential utilities, not merely this
+single-caller foundation. PostgreSQL is authoritative for all platform domain
+records; [paired PR #21](https://github.com/falbanese9484/howard/pull/21) owns storage.
+Agent identity/config versions, scoped contexts, users/interface identity bindings,
+roles/permissions and tool/MCP registry are durable even when a worker is replaced.
+Artifact bytes may live in object storage; secrets live behind secret-manager refs.
+
+Management CRUD API **and a small admin UI are in MVP**. Proposed resource families
+are `/management/agents`, `/config-versions`, `/registry/tools`, `/registry/mcps`,
+`/context-references`, `/roles` and `/identity-bindings`. Create/read/update/disable
+operations require a verified admin with explicit tenant-scoped management rights;
+UI visibility is not enforcement. Prevent self-assigned roles, cross-tenant binding,
+and arbitrary identity relinking. Binding uniqueness includes interface, issuer,
+tenant and subject; linking must prove control through the approved identity adapter.
+Exact role grants/bootstrap admin ownership require company review, not invented
+business policy. Ordinary users cannot edit their own permissions or agent ceilings.
+
+Mutations use expected config version, validated typed fields, one transaction for
+new immutable version/current pointer/audit, and sanitized actor/change provenance.
+Stale version returns conflict; unknown or unsafe tool/MCP descriptors fail closed.
+Deletion disables future use while retaining referenced versions and audit/tombstones.
+Runs pin the accepted config version; restrictive changes/revocation apply on every
+action/read, while expansion requires a new run under a newly admitted version.
+Registering a tool/MCP does **not** grant execution or contact its endpoint. Activating
+an explicitly reviewed adapter requires separate agent ceiling and role grants plus
+resource/context policy. No arbitrary plugin upload, code execution, endpoint probe
+or unaudited credential entry through CRUD. Credential fields accept references only.
+
+Roles define user permissions and can NEVER widen an agent's scope. Backend checks
+`role permissions ∩ agent ceiling ∩ resource/context/audience constraints` for each
+worker action. Management actions instead require explicit role-derived control-
+plane permissions for the target tenant/resource; they are not dispatched through
+the agent, and never transfer those admin rights to it.
+A model assertion, skill load, MCP registration or provisioned workspace adds no
+privileges. Invoke skills/tools/MCP only when needed to satisfy the task; necessity
+is an additional selection rule, never authorization. Existing worker shell/write
+and network restrictions stay unchanged until separately reviewed typed adapters.
+
+MVP demonstration: one durable agent, one authenticated interface, two synthetic
+roles (`reader`: list/read; `catalog-reader`: list only) and two narrow existing
+read-only tools (`ls`, `read_file`) against controlled synthetic resources. An admin
+uses the small CRUD UI/API to register descriptors, create a version with explicit
+scope/context and bind synthetic users to verified fixture identities/roles. Each
+user opens a separate owner-scoped session; list succeeds for both, read fails for
+the second role, and even an extra role permission cannot enable an out-of-ceiling
+action. MCP descriptor CRUD is demonstrated without executing an arbitrary MCP;
+actual MCP use needs a reviewed narrow adapter. The run commits incrementally and
+replacement shows authorized history/saved artifacts as defined in #10. Production
+MVP acceptance additionally requires real company identity/RBAC integration and
+freshness/revocation behavior; synthetic fixtures cannot satisfy that gate.
+
+Follow-up units (each separately approved): domain store/config versioning; admin
+CRUD API/UI with audit and identity/role controls; executor persistence and scratch
+budgets; narrow adapter/registry dispatch enforcement; verified interface integration
+and end-to-end restart acceptance. #9/#10 remain design foundations for these units,
+not implementation of the whole MVP. Management UI is not deferred out of MVP.
+
 ## Review gate and smallest later slice
 
 First review #9/#10 vocabulary, private-audience restriction, recovery failure
-mapping, and backend choice. Next authorize #10's store-only slice (no service or
+mapping, and authoritative PostgreSQL domain ownership. Next authorize #10's store-only slice (no service or
 provider calls). Then separately review an in-memory admission/auth-policy adapter
 with fake identity/policy and these fixtures; no listener in that slice. Only after
 company identity/RBAC contract, TTL/revocation owner, workload secret/TLS lifecycle,
 workspace isolation and durable executor integration are agreed should a narrow
-single-caller synthetic read-only end-to-end service slice be proposed. No personal
+single-interface synthetic read-only end-to-end slice be proposed alongside the
+management API/UI follow-up. This foundation sequence does not constitute complete
+MVP acceptance; the workflow and production integration gates above still apply. No personal
 OpenCode migration. All future implementation/deployment needs new approval.
 
-See [fixtures.json](fixtures.json) and [fixture_test.go](fixture_test.go).
+See [MVP examples](mvp-fixtures.json) and [fixtures.json](fixtures.json) and [fixture_test.go](fixture_test.go).
 Run `go test ./notes/design-9`; this validates fixture integrity and existing
 lifecycle compatibility, not an implemented auth service or security assurance.
 Rollback: remove this directory; no data/runtime changes.

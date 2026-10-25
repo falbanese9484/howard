@@ -1,0 +1,38 @@
+{
+  "design_only": true,
+  "agent": {"id": "agent-a", "version": 1, "ceiling": ["files.list", "files.read"], "workspace_ref": "w1"},
+  "roles": {"reader": ["files.list", "files.read"], "catalog-reader": ["files.list"], "extra-role": ["files.list", "shell.execute"]},
+  "interface": {"id": "synthetic-interface", "production_identity_verified": false},
+  "authorization_cases": [
+    {"id": "reader_read", "role": "reader", "action": "files.read", "resource": "w1", "needed": true, "expected_dispatch": true},
+    {"id": "catalog_read_denied", "role": "catalog-reader", "action": "files.read", "resource": "w1", "needed": true, "expected_dispatch": false},
+    {"id": "catalog_list", "role": "catalog-reader", "action": "files.list", "resource": "w1", "needed": true, "expected_dispatch": true},
+    {"id": "role_cannot_widen", "role": "extra-role", "action": "shell.execute", "resource": "w1", "needed": true, "expected_dispatch": false},
+    {"id": "outside_resource", "role": "reader", "action": "files.read", "resource": "w2", "needed": true, "expected_dispatch": false},
+    {"id": "unneeded_tool", "role": "reader", "action": "files.read", "resource": "w1", "needed": false, "expected_dispatch": false}
+  ],
+  "management_cases": [
+    {"id": "admin_create", "request": {"verified_admin": true, "expected_version": 0, "kind": "registry_mcp", "descriptor": "reviewed-synthetic-descriptor"}, "existing_version": 0, "expected": "created_version_1", "execution_granted": false, "endpoint_contacted": false, "audit_committed": true},
+    {"id": "nonadmin_register", "request": {"verified_admin": false, "expected_version": 0, "kind": "registry_mcp", "descriptor": "reviewed-synthetic-descriptor"}, "existing_version": 0, "expected": "denied", "execution_granted": false, "endpoint_contacted": false, "audit_committed": false},
+    {"id": "stale_update", "request": {"verified_admin": true, "expected_version": 0, "kind": "registry_mcp", "descriptor": "reviewed-synthetic-descriptor"}, "existing_version": 1, "expected": "conflict", "execution_granted": false, "endpoint_contacted": false, "audit_committed": false},
+    {"id": "admin_disable", "request": {"verified_admin": true, "expected_version": 1, "kind": "registry_mcp", "descriptor": "reviewed-synthetic-descriptor"}, "existing_version": 1, "expected": "disabled_version_2", "execution_granted": false, "endpoint_contacted": false, "audit_committed": true}
+  ],
+  "negative_cases": [
+    {"id": "skill_load", "skill": "synthetic-read-guidance", "requested_action": "shell.execute", "dispatch": false},
+    {"id": "workspace_provision", "provisioner_created_directory": true, "requested_action": "files.write", "dispatch": false},
+    {"id": "cross_owner_history", "requester": "person-b", "record_owner": "person-a", "content_released": false},
+    {"id": "expired_identity", "binding_expired": true, "approval_valid": true, "dispatch": false},
+    {"id": "consumed_approval_restart", "binding_valid": true, "approval_consumed": true, "dispatch": false},
+    {"id": "self_role_assignment", "verified_admin": false, "dispatch": false}
+  ],
+  "workflow": [
+    "admin_crud_ui",
+    "immutable_config_audit_commit",
+    "verified_interface_fixture_binding",
+    "separate_owner_sessions",
+    "role_agent_intersection",
+    "incremental_durable_commits",
+    "replacement_reads_saved_history_artifact",
+    "production_identity_gate_unsatisfied"
+  ]
+}

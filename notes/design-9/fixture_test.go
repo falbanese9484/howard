@@ -74,3 +74,58 @@ func TestBoundaryFixtures(t *testing.T) {
 		t.Fatal("missing stopped terminal example")
 	}
 }
+
+// A small independent set-intersection oracle checks proposed examples, not runtime enforcement.
+func TestMVPExamples(t *testing.T) {
+	var f struct {
+		Agent struct {
+			Ceiling   []string
+			Workspace string `json:"workspace_ref"`
+		}
+		Roles map[string][]string
+		Cases []struct {
+			ID, Role, Action, Resource string
+			Needed                     bool
+			Dispatch                   bool `json:"expected_dispatch"`
+		} `json:"authorization_cases"`
+		Management []struct {
+			ID        string
+			Granted   bool `json:"execution_granted"`
+			Contacted bool `json:"endpoint_contacted"`
+			Audit     bool `json:"audit_committed"`
+			Expected  string
+		} `json:"management_cases"`
+	}
+	b, err := os.ReadFile("mvp-fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(b, &f); err != nil {
+		t.Fatal(err)
+	}
+	contains := func(xs []string, s string) bool {
+		for _, x := range xs {
+			if x == s {
+				return true
+			}
+		}
+		return false
+	}
+	if len(f.Cases) != 6 || len(f.Management) != 4 {
+		t.Fatal("missing MVP cases")
+	}
+	for _, c := range f.Cases {
+		allowed := contains(f.Agent.Ceiling, c.Action) && contains(f.Roles[c.Role], c.Action) && c.Resource == f.Agent.Workspace && c.Needed
+		if allowed != c.Dispatch {
+			t.Errorf("intersection mismatch: %s", c.ID)
+		}
+	}
+	for _, c := range f.Management {
+		if c.Granted || c.Contacted {
+			t.Errorf("registration grants execution: %s", c.ID)
+		}
+		if (c.Expected == "created_version_1" || c.Expected == "disabled_version_2") && !c.Audit {
+			t.Fatal("mutation lacks audit")
+		}
+	}
+}
