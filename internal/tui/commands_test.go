@@ -3,10 +3,13 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/falbanese9484/agent-harness/internal/chat"
+	"github.com/falbanese9484/agent-harness/internal/types"
 )
 
 func typeCommandText(m *Model, text string) {
@@ -113,7 +116,7 @@ func TestCommandMenuDismissAndBusy(t *testing.T) {
 }
 
 func TestCommandMenuFitsTerminal(t *testing.T) {
-	for _, size := range []tea.WindowSizeMsg{{Width: 32, Height: 12}, {Width: 80, Height: 24}, {Width: 160, Height: 48}} {
+	for _, size := range []tea.WindowSizeMsg{{Width: 24, Height: 8}, {Width: 32, Height: 12}, {Width: 80, Height: 24}, {Width: 160, Height: 48}} {
 		m := New(Config{Width: size.Width, Height: size.Height})
 		for range 20 {
 			m.commands = append(m.commands, slashCommand{name: "/long-command", description: "A long command description for narrow terminals"})
@@ -127,6 +130,111 @@ func TestCommandMenuFitsTerminal(t *testing.T) {
 		}
 		if width, height := lipgloss.Size(m.View()); width > size.Width || height > size.Height {
 			t.Errorf("menu at %dx%d is %dx%d", size.Width, size.Height, width, height)
+		}
+	}
+}
+
+type promptProvider struct {
+	sessionProvider
+	submitted chan string
+}
+
+func (p *promptProvider) GenerateRequest(prompt string) *types.ChatRequest {
+	return &types.ChatRequest{Prompt: prompt}
+}
+
+func (p *promptProvider) Chat(conn *types.BusConnector) {
+	p.submitted <- conn.Request.Prompt
+}
+
+func TestNonExactSlashInputSubmitsPrompt(t *testing.T) {
+	for _, input := range []string{
+		"/new ", "/new\t", "/new\n", "/new\r\n", "/new\u00a0",
+		"/new\nmore text", "/new extra", "  /new ", "\n/new", "/unknown ",
+		" /new", "\t/new", "/unknown", "ordinary prompt", " padded prompt ",
+	} {
+		for _, dismissed := range []bool{false, true} {
+			t.Run(input+map[bool]string{false: "/visible", true: "/dismissed"}[dismissed], func(t *testing.T) {
+				p := &promptProvider{submitted: make(chan string, 1)}
+				m := New(Config{Width: 80, Height: 24, Provider: p, Bus: chat.NewBus(nil, p)})
+				m.chatView.Append("existing chat")
+				m.clipboard.Push("previous prompt")
+				m.currentResp = "previous response"
+				m.currentThinking = "previous thinking"
+				m.input.Textarea.SetValue(input)
+				before := m.input.Textarea.Value()
+				m.commandsHidden = dismissed
+				_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				if cmd == nil || p.resets != 0 || !m.isResponding || m.err != nil {
+					t.Fatalf("prompt was not submitted: resets=%d, error=%v", p.resets, m.err)
+				}
+				if m.input.Textarea.Value() != "" || len(m.chatView.Messages) != 2 || m.clipboard.Prev() != before {
+					t.Fatal("prompt submission did not update chat, history, and input")
+				}
+				select {
+				case got := <-p.submitted:
+					if got != before {
+						t.Fatalf("LLM received %q, want original input %q", got, before)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("prompt did not reach provider")
+				}
+			})
+		}
+	}
+}
+
+func TestCommandRegistryDispatch(t *testing.T) {
+	m := New(Config{Width: 80, Height: 24})
+	for _, command := range m.commands {
+		if command.execute == nil {
+			t.Fatalf("registered command %s has no handler", command.name)
+		}
+	}
+	calls := 0
+	m.commands = append(m.commands, slashCommand{
+		name: "/custom", description: "Custom command",
+		execute: func(*Model) tea.Cmd {
+			calls++
+			return func() tea.Msg { return "custom result" }
+		},
+	})
+	for _, dismissed := range []bool{false, true} {
+		m.input.Textarea.SetValue("/custom")
+		m.commandsHidden = dismissed
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd == nil || cmd() != "custom result" {
+			t.Fatal("registry handler command was not returned")
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("handler called %d times, want 2", calls)
+	}
+	if handled, cmd := m.handleSlashCommand("/unknown"); handled || cmd != nil || m.err != nil {
+		t.Fatal("unknown command was handled instead of falling through to prompt submission")
+	}
+}
+
+func TestCommandMenuResizeAndDismissalLayout(t *testing.T) {
+	m := New(Config{Width: 80, Height: 24})
+	typeCommandText(m, "/")
+	for _, size := range []tea.WindowSizeMsg{{Width: 24, Height: 8}, {Width: 32, Height: 10}, {Width: 80, Height: 24}} {
+		m.Update(size)
+		if width, height := lipgloss.Size(m.View()); width > size.Width || height > size.Height {
+			t.Fatalf("open menu at %dx%d is %dx%d", size.Width, size.Height, width, height)
+		}
+		openHeight := m.chatView.Viewport.Height
+		m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		if m.chatView.Viewport.Height != openHeight+1 || m.renderCommandMenu() != "" {
+			t.Fatal("dismissal did not restore menu space to chat viewport")
+		}
+		if width, height := lipgloss.Size(m.View()); width > size.Width || height > size.Height {
+			t.Fatalf("dismissed menu at %dx%d is %dx%d", size.Width, size.Height, width, height)
+		}
+		typeCommandText(m, "n")
+		m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		if m.chatView.Viewport.Height != openHeight {
+			t.Fatal("typing did not reserve space for reopened menu")
 		}
 	}
 }

@@ -88,7 +88,7 @@ func New(cfg Config) *Model {
 		mode:      modeChat,
 		clipboard: historyInit(10),
 		commands: []slashCommand{
-			{name: "/new", description: "Start a new session"},
+			{name: "/new", description: "Start a new session", execute: (*Model).startNewSession},
 		},
 	}
 	m.updateLayout()
@@ -106,9 +106,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if key, ok := msg.(tea.KeyMsg); ok && m.handleCommandMenuKey(key) {
-		m.updateLayout()
-		return m, nil
+	if key, ok := msg.(tea.KeyMsg); ok {
+		if handled, cmd := m.handleCommandMenuKey(key); handled {
+			m.updateLayout()
+			return m, cmd
+		}
 	}
 	previousInput := m.input.Textarea.Value()
 	var inputCmd, viewCmd tea.Cmd
@@ -117,6 +119,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.input.Textarea.Value() != previousInput {
 		m.commandIndex = 0
 		m.commandsHidden = false
+		m.updateLayout()
 	}
 
 	switch msg := msg.(type) {
@@ -306,15 +309,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		prompt := strings.TrimSpace(m.input.Textarea.Value())
-		if prompt == "" {
+		prompt := m.input.Textarea.Value()
+		if strings.TrimSpace(prompt) == "" {
 			return m, nil
 		}
 		if prompt == "exit" {
 			return m, tea.Quit
 		}
-		if strings.HasPrefix(prompt, "/") {
-			return m, m.handleSlashCommand(prompt)
+		if handled, cmd := m.handleSlashCommand(prompt); handled {
+			return m, cmd
 		}
 
 		m.clipboard.Push(prompt)
@@ -343,29 +346,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.selector.Toggle()
 	}
 	return m, nil
-}
-
-func (m *Model) handleSlashCommand(command string) tea.Cmd {
-	switch command {
-	case "/new":
-		if err := m.provider.ResetConversation(); err != nil {
-			m.err = err
-			return nil
-		}
-		m.chatView.Messages = nil
-		m.currentResp = ""
-		m.currentThinking = ""
-		m.err = nil
-		m.clipboard = historyInit(m.clipboard.limit)
-		m.commandIndex = 0
-		m.commandsHidden = false
-		m.input.Textarea.Reset()
-		m.updateLayout()
-		m.chatView.Viewport.GotoTop()
-	default:
-		m.err = fmt.Errorf("unknown command: %s (available: /new)", command)
-	}
-	return nil
 }
 
 func (m *Model) updateLayout() {

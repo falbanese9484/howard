@@ -66,6 +66,10 @@ Type `/` to show available commands above the prompt. Keep typing to filter the
 list, use `↑` / `↓` to select a command, and press `Enter` to run it. `Tab` fills
 in the selected command; `Esc` dismisses the menu.
 
+Only an exact slash command runs directly. Leading or trailing whitespace,
+newlines, additional text, and unknown slash commands are sent to the LLM as
+ordinary prompt text. Selecting a command from the menu runs that command.
+
 ## Configuration
 - `provider`: `ollama` or `openrouter`
 - `model`: model name to use, such as an Ollama tag or OpenRouter model ID
