@@ -20,11 +20,14 @@ type Bus struct {
 }
 
 func NewBus(log *logger.Logger, provider types.Provider) *Bus {
-	// TODO(review): Content (cap 16) blocks the provider goroutine forever if the
+	// Content must be unbuffered: a provider sends all content before its terminal
+	// signal, and Start forwards each received chunk before selecting again. This
+	// prevents Done or Error from overtaking content and leaving it for a later turn.
+	// TODO(review): Content blocks the provider goroutine forever if the
 	// consumer stops draining. See notes/review-checklist.md.
 	return &Bus{
 		Done:     make(chan bool, 1),
-		Content:  make(chan *types.ChatResponse, 16),
+		Content:  make(chan *types.ChatResponse),
 		Error:    make(chan error, 1),
 		provider: provider,
 		logger:   log,
