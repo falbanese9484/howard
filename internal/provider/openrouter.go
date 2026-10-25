@@ -138,6 +138,20 @@ func NewOpenRouter(
 	}, nil
 }
 
+func (o *OpenRouter) ResetConversation() error {
+	if !o.turnMu.TryLock() {
+		return ErrConversationBusy
+	}
+	defer o.turnMu.Unlock()
+
+	var messages []openRouterMessage
+	if len(o.messages) > 0 && o.messages[0].Role == "system" {
+		messages = []openRouterMessage{o.messages[0]}
+	}
+	o.messages = messages
+	return nil
+}
+
 func (o *OpenRouter) GenerateRequest(prompt string) *types.ChatRequest {
 	o.modelMu.RLock()
 	defer o.modelMu.RUnlock()

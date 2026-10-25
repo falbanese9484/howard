@@ -182,6 +182,88 @@ func replyTestStream(w http.ResponseWriter, kind, text string, readTool bool) {
 	fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", data)
 }
 
+func TestProvidersResetConversation(t *testing.T) {
+	for _, kind := range []string{"ollama", "openrouter"} {
+		for _, systemPrompt := range []string{"", "Keep this system instruction"} {
+			t.Run(kind+"/"+systemPrompt, func(t *testing.T) {
+				requests := make(chan recordedRequest, 3)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var req recordedRequest
+					if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+						t.Error(err)
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					requests <- req
+					replyTestStream(w, kind, "answer", false)
+				}))
+				defer server.Close()
+				cfg := &config.AgentConfig{Model: "initial", ApiKey: "synthetic"}
+				if systemPrompt != "" {
+					cfg.SystemPrompt = config.SystemPromptConfig{Sections: []config.SystemPromptSection{{Content: []string{systemPrompt}}}}
+				}
+				p := newTestProvider(t, kind, cfg, setupToolTestProject(t), server.URL)
+				for _, prompt := range []string{"old prompt", "follow-up"} {
+					conn := testConnector(p, prompt)
+					p.Chat(conn)
+					select {
+					case err := <-conn.ErrorChan:
+						t.Fatal(err)
+					default:
+					}
+				}
+				first, second := <-requests, <-requests
+				if len(second.Messages) != len(first.Messages)+2 {
+					t.Fatal("conversation did not retain earlier turn before reset")
+				}
+				p.SetModel("selected-model")
+				if err := p.ResetConversation(); err != nil {
+					t.Fatal(err)
+				}
+				conn := testConnector(p, "fresh prompt")
+				p.Chat(conn)
+				select {
+				case err := <-conn.ErrorChan:
+					t.Fatal(err)
+				default:
+				}
+				next := <-requests
+				if next.Model != "selected-model" || len(next.Messages) != len(first.Messages) {
+					t.Fatalf("fresh request = %#v", next)
+				}
+				if systemPrompt != "" && next.Messages[0] != first.Messages[0] {
+					t.Fatal("reset changed system prompt")
+				}
+				if last := next.Messages[len(next.Messages)-1]; last.Role != "user" || last.Content != "fresh prompt" {
+					t.Fatalf("fresh user message = %#v", last)
+				}
+			})
+		}
+	}
+}
+
+func TestProvidersResetRejectsActiveTurn(t *testing.T) {
+	ollama := &Ollama{messages: []types.Message{{Role: "user", Content: "keep"}}}
+	openrouter := &OpenRouter{messages: []openRouterMessage{{Role: "user", Content: "keep"}}}
+	for _, test := range []struct {
+		provider types.Provider
+		state    *conversationState
+	}{
+		{ollama, &ollama.conversationState},
+		{openrouter, &openrouter.conversationState},
+	} {
+		test.state.turnMu.Lock()
+		err := test.provider.ResetConversation()
+		test.state.turnMu.Unlock()
+		if !errors.Is(err, ErrConversationBusy) {
+			t.Fatalf("reset while active = %v", err)
+		}
+	}
+	if len(ollama.messages) != 1 || len(openrouter.messages) != 1 {
+		t.Fatal("busy reset discarded history")
+	}
+}
+
 func TestProvidersIsolateHistoryModelConfigAndTools(t *testing.T) {
 	for _, kind := range []string{"ollama", "openrouter"} {
 		t.Run(kind, func(t *testing.T) {

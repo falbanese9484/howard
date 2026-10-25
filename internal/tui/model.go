@@ -50,6 +50,9 @@ type Model struct {
 	mode            mode
 	err             error
 	clipboard       *history
+	commands        []slashCommand
+	commandIndex    int
+	commandsHidden  bool
 }
 
 type Config struct {
@@ -84,6 +87,9 @@ func New(cfg Config) *Model {
 		height:    cfg.Height,
 		mode:      modeChat,
 		clipboard: historyInit(10),
+		commands: []slashCommand{
+			{name: "/new", description: "Start a new session", execute: (*Model).startNewSession},
+		},
 	}
 	m.updateLayout()
 	return m
@@ -100,9 +106,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if key, ok := msg.(tea.KeyMsg); ok {
+		if handled, cmd := m.handleCommandMenuKey(key); handled {
+			m.updateLayout()
+			return m, cmd
+		}
+	}
+	previousInput := m.input.Textarea.Value()
 	var inputCmd, viewCmd tea.Cmd
 	m.input.Textarea, inputCmd = m.input.Textarea.Update(msg)
 	m.chatView.Viewport, viewCmd = m.chatView.Viewport.Update(msg)
+	if m.input.Textarea.Value() != previousInput {
+		m.commandIndex = 0
+		m.commandsHidden = false
+		m.updateLayout()
+	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -110,7 +128,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case responseMsg:
 		return m.handleResponse(msg)
 	case tea.KeyMsg:
-		return m.handleKey(msg)
+		model, cmd := m.handleKey(msg)
+		m.updateLayout()
+		return model, cmd
 	case errMsg:
 		m.err = msg
 		return m, nil
@@ -143,6 +163,9 @@ func (m *Model) View() string {
 	if thinking := m.renderThinkingBox(); thinking != "" {
 		sections = append(sections, thinking)
 	}
+	if commands := m.renderCommandMenu(); commands != "" {
+		sections = append(sections, commands)
+	}
 	sections = append(sections, m.renderInput(), m.renderFooter())
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, content)
@@ -161,9 +184,16 @@ func (m *Model) renderFooter() string {
 		status = styles.Error.Render("● " + m.err.Error())
 	}
 	help := styles.Key.Render("enter") + styles.MutedText.Render(" send  ") +
+		styles.Key.Render("/") + styles.MutedText.Render(" commands  ") +
 		styles.Key.Render("ctrl+f") + styles.MutedText.Render(" models  ") +
 		styles.Key.Render("↑/↓") + styles.MutedText.Render(" history  ") +
 		styles.Key.Render("esc") + styles.MutedText.Render(" quit")
+	if len(m.commandMatches()) > 0 {
+		help = styles.Key.Render("↑/↓") + styles.MutedText.Render(" select  ") +
+			styles.Key.Render("enter") + styles.MutedText.Render(" run  ") +
+			styles.Key.Render("tab") + styles.MutedText.Render(" complete  ") +
+			styles.Key.Render("esc") + styles.MutedText.Render(" dismiss")
+	}
 	width := m.chatView.Viewport.Width
 	gap := width - lipgloss.Width(status) - lipgloss.Width(help)
 	if gap < 2 {
@@ -279,16 +309,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		prompt := strings.TrimSpace(m.input.Textarea.Value())
-		if prompt == "" {
+		prompt := m.input.Textarea.Value()
+		if strings.TrimSpace(prompt) == "" {
 			return m, nil
 		}
 		if prompt == "exit" {
 			return m, tea.Quit
 		}
+		if handled, cmd := m.handleSlashCommand(prompt); handled {
+			return m, cmd
+		}
 
 		m.clipboard.Push(prompt)
 
+		m.err = nil
 		m.currentResp = ""
 		m.currentThinking = ""
 		m.isResponding = true
@@ -329,6 +363,9 @@ func (m *Model) updateLayout() {
 	reserved := 3 + lipgloss.Height(m.renderInput())
 	if thinking := m.renderThinkingBox(); thinking != "" {
 		reserved += lipgloss.Height(thinking)
+	}
+	if commands := m.renderCommandMenu(); commands != "" {
+		reserved += lipgloss.Height(commands)
 	}
 	m.chatView.Viewport.Height = max(1, m.height-reserved)
 	if len(m.chatView.Messages) == 0 {
