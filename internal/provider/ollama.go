@@ -91,6 +91,20 @@ func NewOllama(log *logger.Logger,
 	}
 }
 
+func (o *Ollama) ResetConversation() error {
+	if !o.turnMu.TryLock() {
+		return ErrConversationBusy
+	}
+	defer o.turnMu.Unlock()
+
+	var messages []types.Message
+	if len(o.messages) > 0 && o.messages[0].Role == "system" {
+		messages = []types.Message{o.messages[0]}
+	}
+	o.messages = messages
+	return nil
+}
+
 func (o *Ollama) GenerateRequest(prompt string) *types.ChatRequest {
 	o.modelMu.RLock()
 	defer o.modelMu.RUnlock()

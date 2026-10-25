@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,6 +10,83 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/falbanese9484/agent-harness/internal/types"
 )
+
+type sessionProvider struct {
+	types.Provider
+	resets int
+	err    error
+}
+
+func (p *sessionProvider) ResetConversation() error {
+	p.resets++
+	return p.err
+}
+
+func TestNewCommandResetsSession(t *testing.T) {
+	p := &sessionProvider{}
+	model := New(Config{Width: 80, Height: 24, ModelName: "selected-model", Provider: p})
+	model.chatView.Append("old conversation")
+	model.clipboard.Push("old prompt")
+	model.currentResp = "old response"
+	model.currentThinking = "old thinking"
+	model.err = errors.New("old error")
+	model.input.Textarea.SetValue("  /new  ")
+
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil || p.resets != 1 {
+		t.Fatalf("/new returned command %v, resets = %d", cmd != nil, p.resets)
+	}
+	if len(model.chatView.Messages) != 0 || model.currentResp != "" || model.currentThinking != "" || model.err != nil || model.isResponding {
+		t.Fatal("/new retained conversation state")
+	}
+	if model.input.Textarea.Value() != "" || model.clipboard.Prev() != "" || model.clipboard.Next() != "" {
+		t.Fatal("/new retained prompt or prompt history")
+	}
+	if model.modelName != "selected-model" || model.provider != p {
+		t.Fatal("/new changed provider or selected model")
+	}
+	if !strings.Contains(ansi.Strip(model.View()), "Start with a prompt.") {
+		t.Fatal("/new did not restore welcome screen")
+	}
+	// Resetting an already empty session is also valid.
+	model.input.Textarea.SetValue("/new")
+	model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if p.resets != 2 {
+		t.Fatal("could not reset an empty session")
+	}
+}
+
+func TestSlashCommandsDoNotSubmitPrompts(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		command    string
+		responding bool
+		resetErr   error
+		wantResets int
+		wantErr    bool
+	}{
+		{name: "busy", command: "/new", responding: true},
+		{name: "reset failure", command: "/new", resetErr: errors.New("busy"), wantResets: 1, wantErr: true},
+		{name: "unknown", command: "/unknown", wantErr: true},
+		{name: "unexpected arguments", command: "/new extra", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &sessionProvider{err: test.resetErr}
+			model := New(Config{Width: 80, Height: 24, Provider: p})
+			model.chatView.Append("existing conversation")
+			model.clipboard.Push("existing prompt")
+			model.isResponding = test.responding
+			model.input.Textarea.SetValue(test.command)
+			_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			if cmd != nil || p.resets != test.wantResets || (model.err != nil) != test.wantErr {
+				t.Fatalf("command = %v, resets = %d, error = %v", cmd != nil, p.resets, model.err)
+			}
+			if len(model.chatView.Messages) != 1 || model.clipboard.Prev() != "existing prompt" || strings.TrimSpace(model.input.Textarea.Value()) != test.command {
+				t.Fatal("rejected command changed session or input")
+			}
+		})
+	}
+}
 
 func TestUpdateKeepsTypedRunesOutOfHistoryNavigation(t *testing.T) {
 	model := New(Config{Width: 80, Height: 24})

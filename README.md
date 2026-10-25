@@ -59,6 +59,13 @@ Keybindings:
 - `Ctrl+F` — open model selector
 - `Esc` / `Ctrl+C` — close selector, or quit
 
+Slash commands (type in the prompt and press `Enter`):
+- `/new` — start a fresh session, clearing the chat, prompt history, and model conversation while keeping the selected model and settings. Available after the current response finishes.
+
+Type `/` to show available commands above the prompt. Keep typing to filter the
+list, use `↑` / `↓` to select a command, and press `Enter` to run it. `Tab` fills
+in the selected command; `Esc` dismisses the menu.
+
 ## Configuration
 - `provider`: `ollama` or `openrouter`
 - `model`: model name to use, such as an Ollama tag or OpenRouter model ID
