@@ -182,3 +182,81 @@ func TestNegativeEventExamples(t *testing.T) {
 		t.Fatal("missing durable completed example")
 	}
 }
+
+func TestMVPRestartAndDiskFixtures(t *testing.T) {
+	var f struct {
+		Authority struct {
+			Domain string `json:"domain_records"`
+			Redis  bool   `json:"redis_required"`
+			EFS    bool   `json:"efs_required"`
+		}
+		Families []string `json:"domain_families"`
+		Cases    []struct {
+			ID      string
+			Durable struct {
+				Messages []string `json:"accepted_message_ids"`
+				Artifact struct {
+					Verified  bool `json:"bytes_verified"`
+					Committed bool `json:"metadata_committed"`
+				}
+			}
+			Fault    map[string]any
+			Expected map[string]any
+		}
+	}
+	b, err := os.ReadFile("mvp-fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(b, &f); err != nil {
+		t.Fatal(err)
+	}
+	if f.Authority.Domain != "postgresql" || f.Authority.Redis || f.Authority.EFS {
+		t.Fatal("incorrect authority/dependency")
+	}
+	if len(f.Families) != 14 {
+		t.Fatal("missing domain family")
+	}
+	seen := map[string]bool{}
+	for _, c := range f.Cases {
+		seen[c.ID] = true
+		if terminal, ok := c.Expected["terminal"].(string); ok {
+			if !domain.RunStatus(terminal).Terminal() {
+				t.Fatalf("invalid terminal: %s", terminal)
+			}
+			if c.Fault["stop_join_proven"] != true || c.Fault["db_available"] != true {
+				t.Fatal("terminal without stop/commit evidence")
+			}
+		}
+		if c.Expected["automatic_replay"] != false {
+			t.Fatalf("replay %s", c.ID)
+		}
+		switch c.ID {
+		case "kill_midtask_replace":
+			if len(c.Durable.Messages) != 2 || !c.Durable.Artifact.Verified || !c.Durable.Artifact.Committed || c.Expected["saved_artifact_readable"] != true || c.Expected["scratch_restored"] != false || c.Expected["terminal"] != nil || c.Expected["blocked"] != true {
+				t.Fatal("replacement overclaims recovery")
+			}
+		case "disk_full_process_alive":
+			if c.Fault["worker_alive"] != true || c.Fault["stop_join_proven"] != true || c.Expected["terminal"] != "failed" {
+				t.Fatal("write failure is not eviction")
+			}
+		case "disk_pressure_eviction", "disk_full_db_unavailable":
+			if c.Expected["terminal"] != nil || c.Expected["blocked"] != true {
+				t.Fatal("unproven terminal")
+			}
+		case "headroom_denied":
+			if c.Fault["used_bytes"].(float64)+c.Fault["reserve_bytes"].(float64)+c.Fault["request_bytes"].(float64) <= c.Fault["pod_budget_bytes"].(float64) || c.Expected["admit_new"] != false {
+				t.Fatal("invalid pressure example")
+			}
+		case "revoked_artifact_after_restart":
+			if c.Expected["saved_artifact_readable"] != false || c.Expected["policy_recheck"] != true {
+				t.Fatal("artifact access not rechecked")
+			}
+		}
+	}
+	for _, id := range []string{"kill_midtask_replace", "disk_full_process_alive", "disk_pressure_eviction", "disk_full_db_unavailable", "headroom_denied", "download_expansion_limit", "cleanup_failure", "revoked_artifact_after_restart", "checkpoint_missing"} {
+		if !seen[id] {
+			t.Errorf("missing %s", id)
+		}
+	}
+}

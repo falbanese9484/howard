@@ -1,0 +1,31 @@
+{
+  "design_only": true,
+  "authority": {"domain_records": "postgresql", "credential_values": "secret_manager", "artifact_bytes": "private_object_store", "redis_required": false, "efs_required": false},
+  "domain_families": [
+    "agents",
+    "agent_config_versions",
+    "tool_skill_mcp_registry",
+    "context_references",
+    "users",
+    "roles_permissions_assignments",
+    "interface_identity_bindings",
+    "sessions",
+    "runs",
+    "messages",
+    "tool_intents_results",
+    "audit",
+    "approvals",
+    "artifact_metadata"
+  ],
+  "cases": [
+    {"id": "kill_midtask_replace", "durable": {"agent_id": "agent-a", "config_version": 1, "session_id": "s1", "run_id": "r1", "accepted_message_ids": ["m1", "m2"], "lifecycle": ["queued", "running"], "artifact": {"id": "a1", "object_version": "v1", "bytes_verified": true, "metadata_committed": true}, "scratch_checkpoint": null}, "fault": {"kind": "worker_kill", "effect_issued": true, "result_committed": false, "shutdown_hook_ran": false}, "expected": {"agent_restored": true, "history_ids": ["m1", "m2"], "saved_artifact_readable": true, "scratch_restored": false, "automatic_replay": false, "tool_outcome": "unknown", "blocked": true, "terminal": null, "policy_recheck": true}},
+    {"id": "disk_full_process_alive", "durable": {"agent_id": "agent-a", "config_version": 1, "session_id": "s1", "run_id": "r1", "accepted_message_ids": ["m1", "m2"], "lifecycle": ["queued", "running"], "artifact": {"id": "a1", "object_version": "v1", "bytes_verified": true, "metadata_committed": true}, "scratch_checkpoint": null}, "fault": {"kind": "ENOSPC", "worker_alive": true, "stop_join_proven": true, "db_available": true}, "expected": {"admit_new": false, "dispatch_more": false, "terminal": "failed", "automatic_replay": false, "history_retained": true}},
+    {"id": "disk_pressure_eviction", "durable": {"agent_id": "agent-a", "config_version": 1, "session_id": "s1", "run_id": "r1", "accepted_message_ids": ["m1", "m2"], "lifecycle": ["queued", "running"], "artifact": {"id": "a1", "object_version": "v1", "bytes_verified": true, "metadata_committed": true}, "scratch_checkpoint": null}, "fault": {"kind": "eviction", "stop_join_proven": false}, "expected": {"admit_new": false, "terminal": null, "blocked": true, "automatic_replay": false, "history_retained": true}},
+    {"id": "disk_full_db_unavailable", "durable": {"agent_id": "agent-a", "config_version": 1, "session_id": "s1", "run_id": "r1", "accepted_message_ids": ["m1", "m2"], "lifecycle": ["queued", "running"], "artifact": {"id": "a1", "object_version": "v1", "bytes_verified": true, "metadata_committed": true}, "scratch_checkpoint": null}, "fault": {"kind": "ENOSPC", "worker_alive": true, "db_available": false}, "expected": {"terminal": null, "blocked": true, "automatic_replay": false, "history_retained": true}},
+    {"id": "headroom_denied", "fault": {"pod_budget_bytes": 100, "used_bytes": 85, "reserve_bytes": 20, "request_bytes": 10}, "expected": {"admit_new": false, "automatic_replay": false}},
+    {"id": "download_expansion_limit", "fault": {"archive_limit_bytes": 20, "expanded_bytes": 21, "stop_join_proven": true, "db_available": true}, "expected": {"dispatch_more": false, "terminal": "failed", "automatic_replay": false}},
+    {"id": "cleanup_failure", "fault": {"cleanup_failed": true, "other_run_active": true}, "expected": {"admit_new": false, "delete_other_run_scratch": false, "automatic_replay": false}},
+    {"id": "revoked_artifact_after_restart", "durable": {"agent_id": "agent-a", "config_version": 1, "session_id": "s1", "run_id": "r1", "accepted_message_ids": ["m1", "m2"], "lifecycle": ["queued", "running"], "artifact": {"id": "a1", "object_version": "v1", "bytes_verified": true, "metadata_committed": true}, "scratch_checkpoint": null}, "fault": {"current_read_permission": false}, "expected": {"saved_artifact_readable": false, "automatic_replay": false, "policy_recheck": true}},
+    {"id": "checkpoint_missing", "fault": {"checkpoint_metadata_committed": true, "checkpoint_object_exists": false}, "expected": {"scratch_restored": false, "blocked": true, "automatic_replay": false}}
+  ]
+}

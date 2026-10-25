@@ -24,15 +24,15 @@ service API. Later integration depends on both designs, not stacked branches.
 
 ## Decision and candidate comparison
 
-Recommend PostgreSQL for canonical records and transactions. A managed PostgreSQL
+Decision: PostgreSQL is authoritative for all platform domain records and transactions. A managed PostgreSQL
 service (e.g. RDS PostgreSQL or company-standard managed PostgreSQL) is the preferred
 production category; provider, region, residency, availability/backup targets,
 connection limits, cost and operator approval remain undecided. SQLite is useful
 locally but a worker-local file cannot satisfy pod replacement without a separate
 volume/recovery architecture. No provider is provisioned or selected for company use.
 
-Recommend private object storage for selected large content/artifacts in a later
-slice; S3 is an evaluated candidate, with the company-standard equivalent also
+Durable artifact bytes may live in private object storage with PostgreSQL metadata;
+this is an MVP capability delivered in a separate implementation unit. For example, S3 is an evaluated candidate, with the company-standard equivalent also
 acceptable after consistency/versioning review. PostgreSQL inline bounded text
 avoids cross-store commits for the first slice. Object stores do not replace
 relational acceptance/completion transactions. S3 has strong read-after-write
@@ -42,6 +42,36 @@ Sources: [PostgreSQL isolation](https://www.postgresql.org/docs/current/transact
 [partial unique indexes](https://www.postgresql.org/docs/current/indexes-partial.html),
 [S3 consistency](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html),
 [version deletion](https://docs.aws.amazon.com/AmazonS3/latest/userguide/DeletingObjectVersions.html).
+
+## Platform domain ownership and optional caches
+
+PostgreSQL also owns `agents` and immutable `agent_config_versions` (scope, capability
+ceiling, context references, budget policy), tool/skill/MCP registry descriptors and
+versions, context references/provenance, users, roles/permissions and assignments,
+interface identity bindings (issuer/subject, verification expiry/revocation version),
+audit decisions and single-use action-bound approvals. These are proposed domain
+families, not executed DDL. Company RBAC/API provider remains unknown: authoritative
+role mapping/synchronization and admin bootstrap are integration decisions, not a
+reason to put platform records outside PostgreSQL. Credentials/OTP/token plaintext
+are excluded; only restricted secret-manager references are stored. Raw content
+bytes may use object storage, with authoritative ownership/version/availability
+metadata in PostgreSQL. The role-to-agent intersection and management CRUD API/UI
+are owned by [paired PR #20](https://github.com/falbanese9484/howard/pull/20).
+
+All management changes atomically persist immutable config version, current pointer
+and sanitized audit; execution pins version refs and rechecks current restrictions.
+Agent identity/config survives pod replacement independently of a conversation or
+provider object. Approval consumption/expiry is durable; neither restart nor a
+restored history reactivates consumed/expired approval. Version and FK checks cover
+control-plane records as well as run history; no orphan binding/config references.
+
+Redis is **not required for MVP** and never owns correctness, sessions, approvals,
+idempotency or active-run locks. Only evaluate it for a measured cache workload.
+One possible candidate is non-secret registry descriptor reads: tenant/version-keyed,
+invalidated on committed update/disable, bounded TTL, authorization rechecked against
+PostgreSQL before use, protected transport/access and no cross-tenant cache results.
+Cache outage falls back to PostgreSQL within budgets, otherwise fails closed; cache
+staleness never grants execution. No cache is added or configured in this design.
 
 ## Minimal records and constraints (conceptual, not DDL)
 
@@ -55,7 +85,9 @@ Sources: [PostgreSQL isolation](https://www.postgresql.org/docs/current/transact
 | event | run FK, sequence unique, #4 event, contiguous sequence/time/transition checked under run lock |
 | artifact metadata | owner/session/run FK, opaque object/version key, digest/size/media type, resource/audience scope, availability; no local path or public URL |
 
-All references include owner scope in foreign keys; no cross-owner association.
+Execution references include owner scope in foreign keys; no cross-owner association.
+Control-plane records below are tenant-scoped and can be referenced by several
+authorized users; sharing agent configuration never shares confidential history.
 Session ID unique within owner; RunID unique across that owner's sessions. A partial
 unique index on `(owner scope, session_id) WHERE active` enforces one active run;
 active includes recovery-blocked runs even if lease expired. Session-level blocked
@@ -96,6 +128,13 @@ releases capacity and creates no accepted run. Unknown commit result: query same
 owner+RunID; retry same key, never invent a replacement. Serialization/deadlock
 retry may repeat only this database transaction, never execution. Tombstones after
 retention forbid replay while avoiding retention of prompt content.
+
+**Incremental durability:** accepted input, queued/running transitions, completed
+structured messages/tool boundaries and saved artifact metadata commit during work,
+not only at shutdown. Persist complete assistant/tool-call messages before their
+intents; persist correlated results before the next round. Terminal completion
+adds only remaining final messages. Token deltas remain ephemeral; checkpoints
+are explicit durable objects, never assumed from scratch files.
 
 **Start and tools:** persist running before provider launch. Persist intent and
 its current policy decision before dispatch; record dispatch marker before invoking
@@ -195,6 +234,46 @@ bounded garbage collection; missing object or digest mismatch marks unavailable,
 never follows arbitrary URLs. Essential context missing => block restoration;
 optional artifact missing => readable text with explicit artifact-unavailable marker.
 
+## Temporary worker disk and pressure handling
+
+Each worker pod has temporary scratch storage. Isolate directories and access by
+owner/session/run inside the pod; one pod does not imply one shared working folder.
+Filesystem staging belongs to a narrowly scoped host provisioner, never a new model
+write/shell grant. Invoke a skill/tool/MCP only if needed, and still enforce the
+current role/agent/resource intersection; loading a skill grants no capability.
+No EFS dependency is introduced just because cluster integration exists. Existing
+EFS configuration is neither changed nor removed; shared disk is not durability.
+
+Require per-run/session and pod aggregate byte/inode budgets, bounded downloads
+(including expanded archive size/count), output/temp limits, rotated bounded logs,
+cleanup of completed/abandoned scratch after stop proof, and reserved admission
+headroom for active work and cleanup. Budget values are workload/ops review inputs,
+not an invented 10 GiB guarantee. Check/reserve headroom before accepting new work,
+recheck during writes/downloads and stop before exceeding a budget. Never delete
+another active run's files to make space. Existing-key reads/retries do not need a
+scratch reservation. Checkpoint/export upload also needs bounded staging space.
+
+Disk-full can cause a write failure while the process is still alive; eviction is
+a different event. On ENOSPC/quota/download-limit failure, stop new tool dispatch,
+join current work, persist a sanitized failed terminal when safe; if persistence or
+stop evidence is unavailable keep the last durable state and recovery block. Local
+log failure must not erase durable run state or trigger retries; protected audit
+commit failure denies further actions. Eviction/kill follows the existing unknown-
+outcome protocol; neither guarantees the remote effect stopped. Cleanup failure
+keeps the pod out of new admission until headroom is verified. No graceful-shutdown
+hook is relied on to save accepted conversation or artifact metadata.
+
+Acceptance fixture: kill a worker mid-task after user/assistant/tool boundaries and
+one artifact's verified bytes+metadata commit. Replacement loads the same durable
+agent/config, authorized conversation and saved artifact without the old provider or
+disk. Saved-artifact readability here means authorized inspection of committed
+content; it is not successful run completion or #12 export/delivery. Unfinished
+scratch and uncommitted token output are lost unless an explicit
+checkpoint was committed and verified. An unresolved external tool effect remains
+unknown and is never automatically rerun; further work stays blocked until required
+stop/reconciliation/workspace gates pass. This is restoration of durable records,
+not a claim to restore every file or resume execution.
+
 ## Retention, schema and next review
 
 Before real data, company owners must set content/audit/object/tombstone retention,
@@ -218,13 +297,18 @@ block/reconcile operations, owner scope required on every method. Bounded inline
 content, synthetic/fake callers, no object adapter, provider, service, credentials,
 queue or automatic recovery. Test transaction rollback, duplicate/concurrent
 acceptance, same-session constraint and independent sessions against an explicitly
-approved disposable test DB; no live DB in this design phase. Backend choice and
-schema/interface review precede authorization of that PR. After its review, separately
+approved disposable test DB; no live DB in this design phase. PostgreSQL schema/interface review precede authorization of that PR. After its review, separately
 approve executor persistence gates/history adapter and #9 admission integration;
 only then consider a single-executor synthetic service. A store fake cannot certify
-SQL atomicity. #11 provider and #12 export remain separate work.
+SQL atomicity. The full MVP additionally includes the platform-domain store, admin
+CRUD API/small UI, registry/role enforcement, temporary-disk budgets, durable artifact
+bytes and verified interface integration described in #9; these are follow-up units,
+not omissions from MVP or additions to this implementation-free PR. Production
+identity/RBAC, retention/residency and storage budgets require owner review. #11
+provider and #12 export remain separate contracts; this does not redefine delivery.
 
-[fixtures.json](fixtures.json) supplies records and crash cases;
+[MVP restart/disk examples](mvp-fixtures.json) and [fixtures.json](fixtures.json)
+supply records and crash cases;
 [fixture_test.go](fixture_test.go) checks IDs, cases and #4 event compatibility.
 `go test ./notes/design-10` proves fixture integrity, not SQL constraints, fencing,
 recovery correctness or cloud readiness. No live provider/DB tests are included.
